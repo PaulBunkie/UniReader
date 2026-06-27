@@ -1,44 +1,44 @@
 <?xml version="1.0" encoding="utf-8"?>
-<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<androidx.coordinatorlayout.widget.CoordinatorLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/readerRoot"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="#FFFFFF">
 
-    <!-- WebView Container -->
-    <FrameLayout
-        android:id="@+id/webViewContainer"
+    <!-- WebView is the base layer -->
+    <WebView
+        android:id="@+id/webView"
         android:layout_width="match_parent"
-        android:layout_height="match_parent">
-        <WebView
-            android:id="@+id/webView"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent" />
-    </FrameLayout>
+        android:layout_height="match_parent"
+        app:layout_behavior="@string/appbar_scrolling_view_behavior" />
 
-    <!-- Overlay Top Panel -->
+    <!-- AppBarLayout defined AFTER WebView to be drawn on top (overlay) -->
     <com.google.android.material.appbar.AppBarLayout
         android:id="@+id/appBarLayout"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:background="#FFF0F0F0"
         app:elevation="4dp">
+
         <com.google.android.material.appbar.MaterialToolbar
             android:id="@+id/toolbar"
             android:layout_width="match_parent"
             android:layout_height="?attr/actionBarSize"
             app:navigationIconTint="#000000"
             app:titleTextColor="#000000" />
+
     </com.google.android.material.appbar.AppBarLayout>
 
-    <!-- Overlay Bottom Panel -->
+    <!-- Bottom Panel Overlay -->
     <FrameLayout
         android:id="@+id/bottomPanel"
         android:layout_width="match_parent"
         android:layout_height="56dp"
         android:layout_gravity="bottom"
-        android:background="#FFF0F0F0">
+        android:background="#FFF0F0F0"
+        android:visibility="gone">
+
         <TextView
             android:id="@+id/tvProgressPlaceholder"
             android:layout_width="wrap_content"
@@ -47,5 +47,7 @@
             android:text="0%"
             android:textColor="#000000"
             android:textStyle="bold" />
+
     </FrameLayout>
-</FrameLayout>
+
+</androidx.coordinatorlayout.widget.CoordinatorLayout>
