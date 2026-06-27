@@ -2,6 +2,16 @@
 <menu xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto">
     <item
+        android:id="@+id/action_toc"
+        android:icon="@android:drawable/ic_menu_sort_by_size"
+        android:title="Contents"
+        app:showAsAction="ifRoom" />
+    <item
+        android:id="@+id/action_settings"
+        android:icon="@android:drawable/ic_menu_preferences"
+        android:title="Appearance"
+        app:showAsAction="ifRoom" />
+    <item
         android:id="@+id/action_fullscreen"
         android:checkable="true"
         android:title="Fullscreen"

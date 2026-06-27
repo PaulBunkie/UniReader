@@ -6,7 +6,7 @@
     android:layout_height="match_parent"
     android:background="#FFFFFF">
 
-    <!-- WebView is the base layer -->
+    <!-- Container for WebView to handle dynamic margins without resizing internal content -->
     <FrameLayout
         android:id="@+id/webViewContainer"
         android:layout_width="match_parent"
@@ -18,21 +18,40 @@
             android:layout_height="match_parent" />
     </FrameLayout>
 
-    <!-- Overlay AppBarLayout with solid primary background -->
+    <!-- Overlay Top Panel -->
     <com.google.android.material.appbar.AppBarLayout
         android:id="@+id/appBarLayout"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:background="?attr/colorPrimary"
+        android:background="#CC6200EE"
         app:elevation="4dp">
 
         <com.google.android.material.appbar.MaterialToolbar
             android:id="@+id/toolbar"
             android:layout_width="match_parent"
             android:layout_height="?attr/actionBarSize"
-            android:background="?attr/colorPrimary"
             app:titleTextColor="@android:color/white" />
 
     </com.google.android.material.appbar.AppBarLayout>
+
+    <!-- Overlay Bottom Panel (Placeholder) -->
+    <FrameLayout
+        android:id="@+id/bottomPanel"
+        android:layout_width="match_parent"
+        android:layout_height="64dp"
+        android:layout_gravity="bottom"
+        android:background="#CC6200EE"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/tvProgressPlaceholder"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:text="Reading Progress: 0%"
+            android:textColor="@android:color/white"
+            android:textStyle="bold" />
+
+    </FrameLayout>
 
 </FrameLayout>

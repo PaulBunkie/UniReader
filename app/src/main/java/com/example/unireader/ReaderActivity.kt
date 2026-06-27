@@ -34,6 +34,7 @@ class ReaderActivity : AppCompatActivity() {
     private lateinit var webView: WebView
     private lateinit var webViewContainer: View
     private lateinit var appBarLayout: AppBarLayout
+    private lateinit var bottomPanel: View
     private var epubBook: EpubBook? = null
     private var currentSpineIndex = 0
     private var isPagedMode = true
@@ -54,6 +55,7 @@ class ReaderActivity : AppCompatActivity() {
         setContentView(R.layout.activity_reader)
 
         appBarLayout = findViewById(R.id.appBarLayout)
+        bottomPanel = findViewById(R.id.bottomPanel)
         webView = findViewById(R.id.webView)
         webViewContainer = findViewById(R.id.webViewContainer)
         
@@ -79,7 +81,7 @@ class ReaderActivity : AppCompatActivity() {
             loadSpineItem(0)
         }
 
-        updateUiState()
+        updateUiState(animate = false)
     }
 
     override fun onCreateOptionsMenu(menu: Menu): Boolean {
@@ -105,6 +107,10 @@ class ReaderActivity : AppCompatActivity() {
                 showPlaceholderDialog()
                 true
             }
+            R.id.action_toc -> {
+                // TOC placeholder
+                true
+            }
             else -> super.onOptionsItemSelected(item)
         }
     }
@@ -122,7 +128,7 @@ class ReaderActivity : AppCompatActivity() {
         webView.reload()
     }
 
-    private fun updateUiState() {
+    private fun updateUiState(animate: Boolean = true) {
         val windowInsetsController = WindowCompat.getInsetsController(window, window.decorView)
 
         if (isFullscreenPref) {
@@ -134,22 +140,59 @@ class ReaderActivity : AppCompatActivity() {
                 windowInsetsController?.show(WindowInsetsCompat.Type.systemBars())
             }
             // WebView fills entire screen
-            webViewContainer.updateLayoutParams<ViewGroup.MarginLayoutParams> { topMargin = 0 }
+            webViewContainer.updateLayoutParams<ViewGroup.MarginLayoutParams> { 
+                topMargin = 0
+                bottomMargin = 0
+            }
+            
+            // Set semi-transparent background for overlays
+            val purpleTransparent = 0xCC6200EE.toInt()
+            appBarLayout.setBackgroundColor(purpleTransparent)
+            bottomPanel.setBackgroundColor(purpleTransparent)
         } else {
-            // NORMAL PREF: Bars always shown, Toolbar always shown
+            // NORMAL PREF: Bars always shown, Toolbar/BottomPanel always shown
             windowInsetsController?.show(WindowInsetsCompat.Type.systemBars())
             isUiOverlayVisible = true
-            // Move WebView strictly below Toolbar
+            
+            // Squeeze WebView strictly between Top and Bottom panels
             appBarLayout.post {
                 webViewContainer.updateLayoutParams<ViewGroup.MarginLayoutParams> { 
                     topMargin = appBarLayout.height 
+                    bottomMargin = bottomPanel.height
                 }
             }
+            
+            // Set solid background for panels
+            val purpleSolid = 0xFF6200EE.toInt()
+            appBarLayout.setBackgroundColor(purpleSolid)
+            bottomPanel.setBackgroundColor(purpleSolid)
         }
         
-        appBarLayout.visibility = if (isUiOverlayVisible) View.VISIBLE else View.GONE
+        // Handle animations for overlays
         if (isUiOverlayVisible) {
+            appBarLayout.visibility = View.VISIBLE
+            bottomPanel.visibility = View.VISIBLE
+            if (animate) {
+                appBarLayout.animate().translationY(0f).setDuration(300).start()
+                bottomPanel.animate().translationY(0f).setDuration(300).start()
+            } else {
+                appBarLayout.translationY = 0f
+                bottomPanel.translationY = 0f
+            }
             appBarLayout.bringToFront()
+            bottomPanel.bringToFront()
+        } else {
+            if (animate) {
+                appBarLayout.animate().translationY(-appBarLayout.height.toFloat()).setDuration(300).withEndAction { 
+                    appBarLayout.visibility = View.GONE 
+                }.start()
+                bottomPanel.animate().translationY(bottomPanel.height.toFloat()).setDuration(300).withEndAction { 
+                    bottomPanel.visibility = View.GONE 
+                }.start()
+            } else {
+                appBarLayout.visibility = View.GONE
+                bottomPanel.visibility = View.GONE
+            }
         }
     }
 
