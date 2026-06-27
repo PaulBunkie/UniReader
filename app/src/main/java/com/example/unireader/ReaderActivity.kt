@@ -17,7 +17,6 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
-import android.widget.FrameLayout
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.Toolbar
@@ -52,6 +51,8 @@ class ReaderActivity : AppCompatActivity() {
     private var isChapterLoading = false
     private var lastAppendedIndex = -1
     private var firstPrependedIndex = Int.MAX_VALUE
+    
+    private var pendingRelativeProgress = -1.0
 
     lateinit var settings: ReaderSettings
     private lateinit var gestureDetector: GestureDetectorCompat
@@ -144,14 +145,30 @@ class ReaderActivity : AppCompatActivity() {
 
     fun setReadingMode(paged: Boolean) {
         if (isPagedMode == paged) return
-        isPagedMode = paged
         
-        if (!isPagedMode) {
-            initSeamlessScroll()
-        } else {
-            webView.reload()
+        captureCurrentProgress { progress ->
+            isPagedMode = paged
+            pendingRelativeProgress = progress
+            
+            if (!isPagedMode) {
+                initSeamlessScroll()
+            } else {
+                initPagedView()
+            }
+            updateUiState()
         }
-        updateUiState()
+    }
+
+    private fun captureCurrentProgress(onCaptured: (Double) -> Unit) {
+        if (isPagedMode) {
+            webView.evaluateJavascript("(function() { var sl = window.pageXOffset || document.documentElement.scrollLeft; var sw = document.documentElement.scrollWidth; var pw = window.innerWidth; var maxScroll = sw - pw; if (maxScroll <= 0) return 0; return sl / maxScroll; })();") {
+                onCaptured(it.toDoubleOrNull() ?: 0.0)
+            }
+        } else {
+            webView.evaluateJavascript("(function() { var container = document.getElementById('chapters-container'); if (!container) return 0; var sections = [...container.children].filter(s => s.tagName === 'SECTION'); var activeSection = sections.find(s => { var r = s.getBoundingClientRect(); return r.top <= 100 && r.bottom > 100; }) || sections[0]; if (activeSection) { var rect = activeSection.getBoundingClientRect(); var prog = Math.abs(rect.top) / rect.height; return Math.min(Math.max(prog, 0), 1); } return 0; })();") {
+                onCaptured(it.toDoubleOrNull() ?: 0.0)
+            }
+        }
     }
 
     fun applyCurrentSettings() {
@@ -161,10 +178,10 @@ class ReaderActivity : AppCompatActivity() {
 
     fun updateUiState(animate: Boolean = true) {
         val windowInsetsController = WindowCompat.getInsetsController(window, window.decorView)
-        // WebViewContainer is inside a CoordinatorLayout (readerRoot)
         val params = webViewContainer.layoutParams as CoordinatorLayout.LayoutParams
 
         if (isFullscreenPref) {
+            params.behavior = null 
             params.topMargin = 0
             params.bottomMargin = 0
             if (!isUiOverlayVisible) {
@@ -241,8 +258,10 @@ class ReaderActivity : AppCompatActivity() {
             @JavascriptInterface
             fun onChapterEntered(index: Int) {
                 runOnUiThread {
-                    currentSpineIndex = index
-                    updateChapterTitle()
+                    if (currentSpineIndex != index) {
+                        currentSpineIndex = index
+                        updateChapterTitle()
+                    }
                 }
             }
         }, "AndroidReader")
@@ -255,6 +274,33 @@ class ReaderActivity : AppCompatActivity() {
             }
             override fun onPageFinished(view: WebView?, url: String?) { 
                 applyCurrentSettings()
+                
+                if (isPagedMode && pendingRelativeProgress >= 0) {
+                    val prog = pendingRelativeProgress
+                    pendingRelativeProgress = -1.0
+                    webView.evaluateJavascript("""
+                        (function() {
+                            var retryCount = 0;
+                            function tryPagedJump() {
+                                var sw = document.documentElement.scrollWidth;
+                                var pw = window.innerWidth;
+                                if ((sw > pw && sw > 0) || retryCount > 30) {
+                                    var maxScroll = sw - pw;
+                                    var targetX = Math.round((maxScroll * $prog) / pw) * pw;
+                                    window.scrollTo(targetX, 0);
+                                    document.body.style.visibility = 'visible';
+                                } else {
+                                    retryCount++;
+                                    setTimeout(tryPagedJump, 50);
+                                }
+                            }
+                            tryPagedJump();
+                        })();
+                    """.trimIndent(), null)
+                } else if (isPagedMode) {
+                    webView.evaluateJavascript("document.body.style.visibility = 'visible';", null)
+                }
+                
                 if (shouldJumpToLastPage) {
                     webView.postDelayed({ executeJumpToLastPage() }, 100)
                 }
@@ -264,6 +310,24 @@ class ReaderActivity : AppCompatActivity() {
             val handled = gestureDetector.onTouchEvent(event)
             if (isPagedMode) handled else false
         }
+    }
+
+    private fun initPagedView() {
+        val loader = chapterLoader ?: return
+        val html = loader.loadChapterHtml(currentSpineIndex) ?: return
+        val wrappedHtml = """
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <style id="reader-style"></style>
+                <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+            </head>
+            <body style="visibility: hidden; margin: 0; padding: 0;">
+                $html
+            </body>
+            </html>
+        """.trimIndent()
+        webView.loadDataWithBaseURL("epub://paged/", wrappedHtml, "text/html", "UTF-8", null)
     }
 
     private fun initSeamlessScroll() {
@@ -284,17 +348,31 @@ class ReaderActivity : AppCompatActivity() {
                                     AndroidReader.onReachedBottom();
                                 } else if (entry.target.id === 'top-sentinel') {
                                     AndroidReader.onReachedTop();
-                                } else {
-                                    var index = parseInt(entry.target.getAttribute('data-index'));
-                                    AndroidReader.onChapterEntered(index);
                                 }
                             }
                         });
                     }, { threshold: 0.1 });
-
-                    function appendChapter(index, html) {
+                    
+                    // Frequent scroll tracker for section active state
+                    window.addEventListener('scroll', function() {
                         var container = document.getElementById('chapters-container');
+                        var sections = [...container.children].filter(s => s.tagName === 'SECTION');
+                        var active = sections.find(s => {
+                            var r = s.getBoundingClientRect();
+                            return r.top <= 100 && r.bottom > 100;
+                        });
+                        if (active) {
+                            var index = parseInt(active.getAttribute('data-index'));
+                            AndroidReader.onChapterEntered(index);
+                        }
+                    });
+
+                    function appendChapter(index, html, progress) {
+                        var container = document.getElementById('chapters-container');
+                        if (document.getElementById('chapter-' + index)) return;
+                        
                         var section = document.createElement('section');
+                        section.id = 'chapter-' + index;
                         section.setAttribute('data-index', index);
                         section.innerHTML = html;
                         
@@ -305,7 +383,6 @@ class ReaderActivity : AppCompatActivity() {
                         }
                         
                         container.appendChild(section);
-                        observer.observe(section);
                         
                         var sentinel = document.createElement('div');
                         sentinel.id = 'bottom-sentinel';
@@ -313,11 +390,20 @@ class ReaderActivity : AppCompatActivity() {
                         sentinel.style.width = '100%';
                         container.appendChild(sentinel);
                         observer.observe(sentinel);
+                        
+                        if (progress > 0) {
+                            setTimeout(function() {
+                                window.scrollTo(0, section.offsetTop + (section.offsetHeight * progress));
+                            }, 100);
+                        }
                     }
 
                     function prependChapter(index, html) {
                         var container = document.getElementById('chapters-container');
+                        if (document.getElementById('chapter-' + index)) return;
+                        
                         var section = document.createElement('section');
+                        section.id = 'chapter-' + index;
                         section.setAttribute('data-index', index);
                         section.innerHTML = html;
                         
@@ -329,7 +415,6 @@ class ReaderActivity : AppCompatActivity() {
 
                         var oldHeight = container.scrollHeight;
                         container.insertBefore(section, container.firstChild);
-                        observer.observe(section);
 
                         var newHeight = container.scrollHeight;
                         window.scrollBy(0, newHeight - oldHeight);
@@ -349,16 +434,19 @@ class ReaderActivity : AppCompatActivity() {
         lastAppendedIndex = -1
         firstPrependedIndex = Int.MAX_VALUE
         isChapterLoading = false
+        val progressToUse = if (pendingRelativeProgress >= 0) pendingRelativeProgress else 0.0
+        pendingRelativeProgress = -1.0
+        
         webView.loadDataWithBaseURL("epub://seamless/", html, "text/html", "UTF-8", null)
         
         webView.postDelayed({
-            loadAndAppendChapter(currentSpineIndex)
+            loadAndAppendChapter(currentSpineIndex, progressToUse)
             loadAndAppendChapter(currentSpineIndex + 1)
             loadAndPrependChapter(currentSpineIndex - 1)
         }, 500)
     }
 
-    private fun loadAndAppendChapter(index: Int) {
+    private fun loadAndAppendChapter(index: Int, progress: Double = 0.0) {
         val loader = chapterLoader ?: return
         if (index < 0 || index >= (epubBook?.spine?.size ?: 0) || index <= lastAppendedIndex) return
         
@@ -372,7 +460,7 @@ class ReaderActivity : AppCompatActivity() {
         lastAppendedIndex = index
         
         val escapedHtml = html.replace("`", "\\`").replace("${"$"}", "\\$")
-        webView.evaluateJavascript("appendChapter($index, `$escapedHtml`);") {
+        webView.evaluateJavascript("appendChapter($index, `$escapedHtml`, $progress);") {
             isChapterLoading = false
         }
     }
@@ -409,7 +497,7 @@ class ReaderActivity : AppCompatActivity() {
 
     private fun executeJumpToLastPage() {
         if (isPagedMode) {
-            webView.evaluateJavascript("(function() { window.scrollTo(document.documentElement.scrollWidth, 0); document.body.style.visibility = 'visible'; })();") {
+            webView.evaluateJavascript("(function() { var sw = document.documentElement.scrollWidth; var pw = window.innerWidth; window.scrollTo(sw - pw, 0); document.body.style.visibility = 'visible'; })();") {
                 shouldJumpToLastPage = false
             }
         } else {
@@ -420,11 +508,12 @@ class ReaderActivity : AppCompatActivity() {
     }
 
     private fun loadSpineItem(index: Int) {
-        val book = epubBook ?: return
-        if (index < 0 || index >= book.spine.size) return
         currentSpineIndex = index
         updateChapterTitle()
-        webView.loadUrl("epub://${if (File(book.opfPath).parent.isNullOrEmpty()) book.spine[index].href else "${File(book.opfPath).parent}/${book.spine[index].href}"}")
+        
+        if (isPagedMode) {
+            initPagedView()
+        }
     }
 
     private fun serveEpubResource(path: String): WebResourceResponse? {
@@ -458,16 +547,13 @@ class ReaderActivity : AppCompatActivity() {
         val heightPx = webView.height
         if (widthPx <= 0 || heightPx <= 0) return
         
-        val initialVisibility = if (shouldJumpToLastPage) "hidden" else "visible"
-        
         val css = """
-            html { margin: 0; padding: 0; height: 100vh; width: 100vw; overflow: hidden; -webkit-column-width: 100vw; -webkit-column-gap: 0; }
+            html { margin: 0; padding: 0; height: 100vh; width: 100vw; overflow: hidden; }
             body { 
-                margin: 0; padding: 0; height: 100vh; width: 100vw; 
+                margin: 0 !important; padding: 0 !important; height: 100vh; width: 100vw; 
                 column-count: 1; column-gap: 0; -webkit-column-count: 1; -webkit-column-gap: 0;
                 display: block; position: relative; box-sizing: border-box; line-height: 1.6;
                 font-family: sans-serif; font-size: ${settings.fontSize}px;
-                visibility: $initialVisibility;
             }
             p, div, h1, h2, h3, h4, h5, h6 { margin: 0 6vw 1em 6vw; text-align: justify; hyphens: auto; }
             * { max-width: 100vw; box-sizing: border-box; word-wrap: break-word; }
@@ -477,12 +563,11 @@ class ReaderActivity : AppCompatActivity() {
     }
 
     private fun injectScrollCss() {
-        val initialVisibility = if (shouldJumpToLastPage) "hidden" else "visible"
         val css = """
             html, body { overflow-x: hidden !important; overflow-y: auto !important; height: auto !important; }
             body { 
                 margin: 0; padding: 24px; line-height: 1.6; font-family: sans-serif; 
-                font-size: ${settings.fontSize}px; visibility: $initialVisibility; 
+                font-size: ${settings.fontSize}px; visibility: visible; 
                 display: block !important;
             } 
             p, div, h1, h2, h3, h4, h5, h6 { text-align: justify; hyphens: auto; margin-top: 0; margin-bottom: 1em; }
@@ -491,13 +576,15 @@ class ReaderActivity : AppCompatActivity() {
     }
 
     private fun nextPage() {
-        webView.evaluateJavascript("(function() { var sw = document.documentElement.scrollWidth || document.body.scrollWidth; var sl = window.pageXOffset || document.documentElement.scrollLeft || document.body.scrollLeft; var pw = window.innerWidth; if (sw > (sl + pw + 10)) { window.scrollTo(sl + pw, 0); return 'ok'; } return 'next'; })();") { 
+        if (!isPagedMode) return
+        webView.evaluateJavascript("(function() { var sw = document.documentElement.scrollWidth; var sl = window.pageXOffset || document.documentElement.scrollLeft; var pw = window.innerWidth; if (sl + pw + 10 < sw) { window.scrollTo(sl + pw, 0); return 'ok'; } return 'next'; })();") { 
             if (it == "\"next\"") loadNextSpineItem()
         }
     }
 
     private fun prevPage() {
-        webView.evaluateJavascript("(function() { var sl = window.pageXOffset || document.documentElement.scrollLeft || document.body.scrollLeft; var pw = window.innerWidth; if (sl > 10) { window.scrollTo(sl - pw, 0); return 'ok'; } return 'prev'; })();") {
+        if (!isPagedMode) return
+        webView.evaluateJavascript("(function() { var sl = window.pageXOffset || document.documentElement.scrollLeft; var pw = window.innerWidth; if (sl > 10) { window.scrollTo(sl - pw, 0); return 'ok'; } return 'prev'; })();") {
             if (it == "\"prev\"") loadPrevSpineItem()
         }
     }
