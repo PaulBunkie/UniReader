@@ -9,6 +9,7 @@ import android.view.Menu
 import android.view.MenuItem
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewGroup
 import android.view.WindowManager
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
@@ -21,7 +22,9 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.core.view.updateLayoutParams
 import com.google.android.material.appbar.AppBarLayout
+import com.google.android.material.bottomsheet.BottomSheetDialog
 import java.io.ByteArrayInputStream
 import java.io.File
 import java.util.zip.ZipInputStream
@@ -29,11 +32,12 @@ import java.util.zip.ZipInputStream
 class ReaderActivity : AppCompatActivity() {
 
     private lateinit var webView: WebView
+    private lateinit var webViewContainer: View
     private lateinit var appBarLayout: AppBarLayout
     private var epubBook: EpubBook? = null
     private var currentSpineIndex = 0
     private var isPagedMode = true
-    private var isFullscreenPref = false // User preference from menu
+    private var isFullscreenPref = false 
     private var isUiOverlayVisible = true
 
     private lateinit var gestureDetector: GestureDetectorCompat
@@ -51,6 +55,7 @@ class ReaderActivity : AppCompatActivity() {
 
         appBarLayout = findViewById(R.id.appBarLayout)
         webView = findViewById(R.id.webView)
+        webViewContainer = findViewById(R.id.webViewContainer)
         
         val toolbar = findViewById<Toolbar>(R.id.toolbar)
         setSupportActionBar(toolbar)
@@ -96,8 +101,19 @@ class ReaderActivity : AppCompatActivity() {
                 updateUiState()
                 true
             }
+            R.id.action_settings -> {
+                showPlaceholderDialog()
+                true
+            }
             else -> super.onOptionsItemSelected(item)
         }
+    }
+
+    private fun showPlaceholderDialog() {
+        val dialog = BottomSheetDialog(this, R.style.TransparentBottomSheetDialog)
+        val view = layoutInflater.inflate(R.layout.dialog_placeholder, null)
+        dialog.setContentView(view)
+        dialog.show()
     }
 
     private fun setReadingMode(paged: Boolean) {
@@ -108,29 +124,33 @@ class ReaderActivity : AppCompatActivity() {
 
     private fun updateUiState() {
         val windowInsetsController = WindowCompat.getInsetsController(window, window.decorView)
-        val params = webView.layoutParams as androidx.coordinatorlayout.widget.CoordinatorLayout.LayoutParams
 
         if (isFullscreenPref) {
-            // FULLSCREEN MODE: Overlay UI
-            params.behavior = null // WebView fills entire screen
-            windowInsetsController.hide(WindowInsetsCompat.Type.systemBars())
-            windowInsetsController.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-            appBarLayout.visibility = if (isUiOverlayVisible) View.VISIBLE else View.GONE
+            // FULLSCREEN PREF: System bars follow overlay visibility
+            if (!isUiOverlayVisible) {
+                windowInsetsController?.hide(WindowInsetsCompat.Type.systemBars())
+                windowInsetsController?.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            } else {
+                windowInsetsController?.show(WindowInsetsCompat.Type.systemBars())
+            }
+            // WebView fills entire screen
+            webViewContainer.updateLayoutParams<ViewGroup.MarginLayoutParams> { topMargin = 0 }
         } else {
-            // NORMAL MODE: Fixed UI
-            params.behavior = AppBarLayout.ScrollingViewBehavior() // WebView starts below AppBar
-            windowInsetsController.show(WindowInsetsCompat.Type.systemBars())
-            appBarLayout.visibility = View.VISIBLE
+            // NORMAL PREF: Bars always shown, Toolbar always shown
+            windowInsetsController?.show(WindowInsetsCompat.Type.systemBars())
             isUiOverlayVisible = true
+            // Move WebView strictly below Toolbar
+            appBarLayout.post {
+                webViewContainer.updateLayoutParams<ViewGroup.MarginLayoutParams> { 
+                    topMargin = appBarLayout.height 
+                }
+            }
         }
         
-        webView.layoutParams = params
-        
-        // Refresh CSS to account for new viewport size if dimensions changed
-        webView.postDelayed({
-            if (isPagedMode) injectPaginationCss()
-            else injectScrollCss()
-        }, 50)
+        appBarLayout.visibility = if (isUiOverlayVisible) View.VISIBLE else View.GONE
+        if (isUiOverlayVisible) {
+            appBarLayout.bringToFront()
+        }
     }
 
     private fun setupGestures() {
@@ -143,7 +163,7 @@ class ReaderActivity : AppCompatActivity() {
                     x < width * 0.3 -> if (isPagedMode) prevPage()
                     x > width * 0.7 -> if (isPagedMode) nextPage()
                     else -> {
-                        // Center tap only toggles UI in Fullscreen mode
+                        // Center tap toggles UI (overlay in Fullscreen, always visible in Normal)
                         if (isFullscreenPref) {
                             isUiOverlayVisible = !isUiOverlayVisible
                             updateUiState()
@@ -178,9 +198,8 @@ class ReaderActivity : AppCompatActivity() {
 
         webView.setOnTouchListener { _, event ->
             val handled = gestureDetector.onTouchEvent(event)
-            // Only handle navigation/toggle if it was a confirmed tap.
-            // Returning false for everything else allows WebView to handle long press for selection.
-            handled
+            // Handle only confirmed single tap. Return false for everything else (enables selection on long press).
+            !handled
         }
     }
 
@@ -203,7 +222,8 @@ class ReaderActivity : AppCompatActivity() {
                 while (entry != null) {
                     if (entry.name.replace("\\", "/") == path.replace("\\", "/")) {
                         val bytes = zip.readBytes()
-                        return WebResourceResponse(getMimeType(path), "UTF-8", ByteArrayInputStream(bytes))
+                        val mimeType = getMimeType(path)
+                        return WebResourceResponse(mimeType, "UTF-8", ByteArrayInputStream(bytes))
                     }
                     entry = zip.nextEntry
                 }
