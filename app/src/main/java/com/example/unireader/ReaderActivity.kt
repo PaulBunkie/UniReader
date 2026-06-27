@@ -15,6 +15,7 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.Toolbar
 import androidx.core.view.GestureDetectorCompat
@@ -22,7 +23,6 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
-import androidx.core.view.updateLayoutParams
 import com.google.android.material.appbar.AppBarLayout
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import java.io.ByteArrayInputStream
@@ -31,22 +31,22 @@ import java.util.zip.ZipInputStream
 
 class ReaderActivity : AppCompatActivity() {
 
-    private lateinit var webView: WebView
-    private lateinit var webViewContainer: View
+    lateinit var webView: WebView
     private lateinit var appBarLayout: AppBarLayout
     private lateinit var bottomPanel: View
     private var epubBook: EpubBook? = null
     private var currentSpineIndex = 0
-    private var isPagedMode = true
-    private var isFullscreenPref = false 
-    private var isUiOverlayVisible = true
+    var isPagedMode = true
+    var isFullscreenPref = false 
+    var isUiOverlayVisible = true
 
+    lateinit var settings: ReaderSettings
     private lateinit var gestureDetector: GestureDetectorCompat
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        settings = ReaderSettings.load(this)
         
-        // Initial setup for edge-to-edge
         WindowCompat.setDecorFitsSystemWindows(window, false)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             window.attributes.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
@@ -57,14 +57,20 @@ class ReaderActivity : AppCompatActivity() {
         appBarLayout = findViewById(R.id.appBarLayout)
         bottomPanel = findViewById(R.id.bottomPanel)
         webView = findViewById(R.id.webView)
-        webViewContainer = findViewById(R.id.webViewContainer)
         
         val toolbar = findViewById<Toolbar>(R.id.toolbar)
         setSupportActionBar(toolbar)
         supportActionBar?.setDisplayHomeAsUpEnabled(true)
-        supportActionBar?.title = "UniReader"
+        supportActionBar?.setDisplayShowTitleEnabled(false)
 
-        // Sync AppBar padding with status bar
+        val toolbarContent = layoutInflater.inflate(R.layout.reader_toolbar_content, toolbar, false)
+        toolbar.addView(toolbarContent)
+        
+        // Final strict grayscale for text and icons
+        toolbarContent.findViewById<TextView>(R.id.tvBookTitle).setTextColor(0xFF000000.toInt())
+        toolbarContent.findViewById<TextView>(R.id.tvChapterTitle).setTextColor(0xFF000000.toInt())
+        toolbar.navigationIcon?.setTint(0xFF000000.toInt())
+
         ViewCompat.setOnApplyWindowInsetsListener(appBarLayout) { v, insets ->
             val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
             v.setPadding(0, systemBars.top, 0, 0)
@@ -78,122 +84,91 @@ class ReaderActivity : AppCompatActivity() {
         if (uriString != null) {
             val uri = Uri.parse(uriString)
             epubBook = EpubParser(this).parse(uri)
+            updateBookTitles()
             loadSpineItem(0)
         }
 
-        updateUiState(animate = false)
+        updateUiState()
+    }
+
+    private fun updateBookTitles() {
+        val book = epubBook ?: return
+        findViewById<TextView>(R.id.tvBookTitle)?.text = book.title ?: "Unknown Book"
+        updateChapterTitle()
+    }
+
+    private fun updateChapterTitle() {
+        val book = epubBook ?: return
+        if (currentSpineIndex < book.spine.size) {
+            val item = book.spine[currentSpineIndex]
+            findViewById<TextView>(R.id.tvChapterTitle)?.text = item.href
+        }
     }
 
     override fun onCreateOptionsMenu(menu: Menu): Boolean {
         menuInflater.inflate(R.menu.menu_reader, menu)
-        menu.findItem(R.id.action_fullscreen)?.isChecked = isFullscreenPref
         return true
     }
 
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
         return when (item.itemId) {
             android.R.id.home -> { finish(); true }
-            R.id.mode_scroll -> { setReadingMode(false); true }
-            R.id.mode_paged -> { setReadingMode(true); true }
-            R.id.action_fullscreen -> {
-                isFullscreenPref = !isFullscreenPref
-                item.isChecked = isFullscreenPref
-                // Reset UI visibility state when toggling preference
-                isUiOverlayVisible = !isFullscreenPref
-                updateUiState()
-                true
-            }
             R.id.action_settings -> {
-                showPlaceholderDialog()
-                true
-            }
-            R.id.action_toc -> {
-                // TOC placeholder
+                ReaderSettingsSheet().show(supportFragmentManager, "settings")
                 true
             }
             else -> super.onOptionsItemSelected(item)
         }
     }
 
-    private fun showPlaceholderDialog() {
-        val dialog = BottomSheetDialog(this, R.style.TransparentBottomSheetDialog)
-        val view = layoutInflater.inflate(R.layout.dialog_placeholder, null)
-        dialog.setContentView(view)
-        dialog.show()
+    fun toggleFullscreenExternally(enabled: Boolean) {
+        isFullscreenPref = enabled
+        isUiOverlayVisible = !isFullscreenPref
+        updateUiState()
     }
 
-    private fun setReadingMode(paged: Boolean) {
-        if (isPagedMode == paged) return
+    fun setReadingMode(paged: Boolean) {
         isPagedMode = paged
-        webView.reload()
+        applyCurrentSettings()
     }
 
-    private fun updateUiState(animate: Boolean = true) {
+    fun applyCurrentSettings() {
+        if (isPagedMode) injectPaginationCss()
+        else injectScrollCss()
+    }
+
+    fun updateUiState() {
         val windowInsetsController = WindowCompat.getInsetsController(window, window.decorView)
+        val params = webView.layoutParams as androidx.coordinatorlayout.widget.CoordinatorLayout.LayoutParams
 
         if (isFullscreenPref) {
-            // FULLSCREEN PREF: System bars follow overlay visibility
+            params.behavior = null 
             if (!isUiOverlayVisible) {
-                windowInsetsController?.hide(WindowInsetsCompat.Type.systemBars())
-                windowInsetsController?.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                windowInsetsController.hide(WindowInsetsCompat.Type.systemBars())
+                windowInsetsController.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
             } else {
-                windowInsetsController?.show(WindowInsetsCompat.Type.systemBars())
+                windowInsetsController.show(WindowInsetsCompat.Type.systemBars())
             }
-            // WebView fills entire screen
-            webViewContainer.updateLayoutParams<ViewGroup.MarginLayoutParams> { 
-                topMargin = 0
-                bottomMargin = 0
-            }
-            
-            // Set semi-transparent background for overlays
-            val purpleTransparent = 0xCC6200EE.toInt()
-            appBarLayout.setBackgroundColor(purpleTransparent)
-            bottomPanel.setBackgroundColor(purpleTransparent)
+            appBarLayout.setBackgroundColor(0xCCF0F0F0.toInt()) // Light Gray Semi-Transparent
+            bottomPanel.setBackgroundColor(0xCCF0F0F0.toInt())
         } else {
-            // NORMAL PREF: Bars always shown, Toolbar/BottomPanel always shown
-            windowInsetsController?.show(WindowInsetsCompat.Type.systemBars())
+            params.behavior = AppBarLayout.ScrollingViewBehavior() 
+            windowInsetsController.show(WindowInsetsCompat.Type.systemBars())
             isUiOverlayVisible = true
-            
-            // Squeeze WebView strictly between Top and Bottom panels
-            appBarLayout.post {
-                webViewContainer.updateLayoutParams<ViewGroup.MarginLayoutParams> { 
-                    topMargin = appBarLayout.height 
-                    bottomMargin = bottomPanel.height
-                }
-            }
-            
-            // Set solid background for panels
-            val purpleSolid = 0xFF6200EE.toInt()
-            appBarLayout.setBackgroundColor(purpleSolid)
-            bottomPanel.setBackgroundColor(purpleSolid)
+            appBarLayout.setBackgroundColor(0xFFF0F0F0.toInt()) // Solid Light Gray
+            bottomPanel.setBackgroundColor(0xFFF0F0F0.toInt())
         }
         
-        // Handle animations for overlays
+        appBarLayout.visibility = if (isUiOverlayVisible) View.VISIBLE else View.GONE
+        bottomPanel.visibility = if (isUiOverlayVisible && isFullscreenPref) View.VISIBLE else View.GONE
+        webView.layoutParams = params
+        
         if (isUiOverlayVisible) {
-            appBarLayout.visibility = View.VISIBLE
-            bottomPanel.visibility = View.VISIBLE
-            if (animate) {
-                appBarLayout.animate().translationY(0f).setDuration(300).start()
-                bottomPanel.animate().translationY(0f).setDuration(300).start()
-            } else {
-                appBarLayout.translationY = 0f
-                bottomPanel.translationY = 0f
-            }
             appBarLayout.bringToFront()
             bottomPanel.bringToFront()
-        } else {
-            if (animate) {
-                appBarLayout.animate().translationY(-appBarLayout.height.toFloat()).setDuration(300).withEndAction { 
-                    appBarLayout.visibility = View.GONE 
-                }.start()
-                bottomPanel.animate().translationY(bottomPanel.height.toFloat()).setDuration(300).withEndAction { 
-                    bottomPanel.visibility = View.GONE 
-                }.start()
-            } else {
-                appBarLayout.visibility = View.GONE
-                bottomPanel.visibility = View.GONE
-            }
         }
+        
+        webView.postDelayed({ applyCurrentSettings() }, 50)
     }
 
     private fun setupGestures() {
@@ -201,17 +176,10 @@ class ReaderActivity : AppCompatActivity() {
             override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
                 val width = webView.width
                 val x = e.x
-                
                 when {
                     x < width * 0.3 -> if (isPagedMode) prevPage()
                     x > width * 0.7 -> if (isPagedMode) nextPage()
-                    else -> {
-                        // Center tap toggles UI (overlay in Fullscreen, always visible in Normal)
-                        if (isFullscreenPref) {
-                            isUiOverlayVisible = !isUiOverlayVisible
-                            updateUiState()
-                        }
-                    }
+                    else -> if (isFullscreenPref) { isUiOverlayVisible = !isUiOverlayVisible; updateUiState() }
                 }
                 return true
             }
@@ -222,38 +190,23 @@ class ReaderActivity : AppCompatActivity() {
     private fun setupWebView() {
         webView.settings.javaScriptEnabled = true
         webView.settings.allowFileAccess = true
-        
         webView.webViewClient = object : WebViewClient() {
             override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): WebResourceResponse? {
                 val url = request?.url?.toString() ?: return null
-                if (url.startsWith("epub://")) {
-                    val path = url.replace("epub://", "")
-                    return serveEpubResource(path)
-                }
+                if (url.startsWith("epub://")) return serveEpubResource(url.replace("epub://", ""))
                 return super.shouldInterceptRequest(view, request)
             }
-
-            override fun onPageFinished(view: WebView?, url: String?) {
-                if (isPagedMode) injectPaginationCss()
-                else injectScrollCss()
-            }
+            override fun onPageFinished(view: WebView?, url: String?) { applyCurrentSettings() }
         }
-
-        webView.setOnTouchListener { _, event ->
-            val handled = gestureDetector.onTouchEvent(event)
-            // Handle only confirmed single tap. Return false for everything else (enables selection on long press).
-            !handled
-        }
+        webView.setOnTouchListener { _, event -> gestureDetector.onTouchEvent(event) }
     }
 
     private fun loadSpineItem(index: Int) {
         val book = epubBook ?: return
         if (index < 0 || index >= book.spine.size) return
         currentSpineIndex = index
-        val item = book.spine[index]
-        val opfDir = File(book.opfPath).parent ?: ""
-        val fullPath = if (opfDir.isEmpty()) item.href else "$opfDir/${item.href}"
-        webView.loadUrl("epub://$fullPath")
+        updateChapterTitle()
+        webView.loadUrl("epub://${if (File(book.opfPath).parent.isNullOrEmpty()) book.spine[index].href else "${File(book.opfPath).parent}/${book.spine[index].href}"}")
     }
 
     private fun serveEpubResource(path: String): WebResourceResponse? {
@@ -264,9 +217,7 @@ class ReaderActivity : AppCompatActivity() {
                 var entry = zip.nextEntry
                 while (entry != null) {
                     if (entry.name.replace("\\", "/") == path.replace("\\", "/")) {
-                        val bytes = zip.readBytes()
-                        val mimeType = getMimeType(path)
-                        return WebResourceResponse(mimeType, "UTF-8", ByteArrayInputStream(bytes))
+                        return WebResourceResponse(getMimeType(path), "UTF-8", ByteArrayInputStream(zip.readBytes()))
                     }
                     entry = zip.nextEntry
                 }
@@ -285,34 +236,26 @@ class ReaderActivity : AppCompatActivity() {
     }
 
     private fun injectPaginationCss() {
+        val widthPx = webView.width
+        val heightPx = webView.height
+        if (widthPx <= 0 || heightPx <= 0) return
         val css = """
-            html { margin: 0; padding: 0; height: 100vh; width: 100vw; overflow: hidden; }
+            html { margin: 0; padding: 0; height: 100vh; width: 100vw; overflow: hidden; -webkit-column-width: 100vw; -webkit-column-gap: 0; }
             body { 
                 margin: 0; padding: 0; height: 100vh; width: 100vw; 
-                column-count: 1; column-gap: 0; 
-                -webkit-column-count: 1; -webkit-column-gap: 0;
+                column-count: 1; column-gap: 0; -webkit-column-count: 1; -webkit-column-gap: 0;
                 display: block; position: relative; box-sizing: border-box; line-height: 1.6;
+                font-family: sans-serif; font-size: ${settings.fontSize}px;
             }
+            p, div, h1, h2, h3, h4, h5, h6 { margin: 0 6vw 1em 6vw; text-align: justify; hyphens: auto; }
             * { max-width: 100vw; box-sizing: border-box; word-wrap: break-word; }
             img { display: block; max-width: 90%; max-height: 80%; margin: 10px auto; object-fit: contain; }
-            p, div, h1, h2, h3, h4, h5, h6 { 
-                margin-left: 6vw; margin-right: 6vw; margin-top: 0; margin-bottom: 1em;
-                text-align: justify; hyphens: auto; line-height: 1.6;
-            }
         """.trimIndent().replace("\n", "")
-
-        webView.evaluateJavascript("""
-            var style = document.getElementById('reader-style') || document.createElement('style');
-            style.id = 'reader-style'; style.innerHTML = '$css';
-            if (!style.parentNode) document.head.appendChild(style);
-            var meta = document.querySelector('meta[name="viewport"]') || document.createElement('meta');
-            meta.name = 'viewport'; meta.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no';
-            if (!meta.parentNode) document.head.appendChild(meta);
-        """.trimIndent(), null)
+        webView.evaluateJavascript("var style = document.getElementById('reader-style') || document.createElement('style'); style.id = 'reader-style'; style.innerHTML = '$css'; if (!style.parentNode) document.head.appendChild(style); var meta = document.querySelector('meta[name=\"viewport\"]') || document.createElement('meta'); meta.name = 'viewport'; meta.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no'; if (!meta.parentNode) document.head.appendChild(meta);", null)
     }
 
     private fun injectScrollCss() {
-        val css = "body { margin: 0; padding: 24px; line-height: 1.6; } p, div, h1, h2, h3, h4, h5, h6 { text-align: justify; hyphens: auto; margin-top: 0; margin-bottom: 1em; }"
+        val css = "body { margin: 0; padding: 24px; line-height: 1.6; font-size: ${settings.fontSize}px; } p, div, h1, h2, h3, h4, h5, h6 { text-align: justify; hyphens: auto; margin-top: 0; margin-bottom: 1em; }"
         webView.evaluateJavascript("var style = document.getElementById('reader-style') || document.createElement('style'); style.id = 'reader-style'; style.innerHTML = '$css'; if (!style.parentNode) document.head.appendChild(style);", null)
     }
 

@@ -3,30 +3,12 @@
     xmlns:app="http://schemas.android.com/apk/res-auto">
     <item
         android:id="@+id/action_toc"
-        android:icon="@android:drawable/ic_menu_sort_by_size"
+        android:icon="@drawable/ic_menu_toc"
         android:title="Contents"
         app:showAsAction="ifRoom" />
     <item
         android:id="@+id/action_settings"
-        android:icon="@android:drawable/ic_menu_preferences"
+        android:icon="@drawable/ic_menu_settings"
         android:title="Appearance"
         app:showAsAction="ifRoom" />
-    <item
-        android:id="@+id/action_fullscreen"
-        android:checkable="true"
-        android:title="Fullscreen"
-        app:showAsAction="never" />
-    <item
-        android:id="@+id/action_reading_mode"
-        android:title="Reading Mode"
-        app:showAsAction="ifRoom">
-        <menu>
-            <item
-                android:id="@+id/mode_scroll"
-                android:title="Scroll" />
-            <item
-                android:id="@+id/mode_paged"
-                android:title="Paged" />
-        </menu>
-    </item>
 </menu>

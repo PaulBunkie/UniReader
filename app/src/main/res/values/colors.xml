@@ -2,4 +2,24 @@
 <resources>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
+
+    <!-- Pure Grayscale Theme Colors -->
+    <color name="reader_gray_panel">#FFF0F0F0</color>
+    <color name="reader_gray_overlay">#E6F0F0F0</color>
+    <color name="reader_black">#FF000000</color>
+    <color name="reader_dark_gray">#FF333333</color>
+    <color name="reader_medium_gray">#FF666666</color>
+    <color name="reader_light_gray">#FFCCCCCC</color>
+
+    <!-- Material Overrides to Kill Violet/Blue -->
+    <color name="colorPrimary">#FF000000</color>
+    <color name="colorOnPrimary">#FFFFFFFF</color>
+    <color name="colorSecondary">#FF666666</color>
+    <color name="colorOnSecondary">#FFFFFFFF</color>
+    <color name="colorTertiary">#FF333333</color>
+    <color name="colorOnTertiary">#FFFFFFFF</color>
+    <color name="colorError">#FFB00020</color>
+    <color name="colorOnError">#FFFFFFFF</color>
+    <color name="colorSurface">#FFF0F0F0</color>
+    <color name="colorOnSurface">#FF000000</color>
 </resources>
