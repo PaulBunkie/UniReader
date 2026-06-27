@@ -15,6 +15,7 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.widget.FrameLayout
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.Toolbar
@@ -23,6 +24,7 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.core.view.updateLayoutParams
 import com.google.android.material.appbar.AppBarLayout
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import java.io.ByteArrayInputStream
@@ -32,6 +34,7 @@ import java.util.zip.ZipInputStream
 class ReaderActivity : AppCompatActivity() {
 
     lateinit var webView: WebView
+    private lateinit var webViewContainer: View
     private lateinit var appBarLayout: AppBarLayout
     private lateinit var bottomPanel: View
     private var epubBook: EpubBook? = null
@@ -57,6 +60,7 @@ class ReaderActivity : AppCompatActivity() {
         appBarLayout = findViewById(R.id.appBarLayout)
         bottomPanel = findViewById(R.id.bottomPanel)
         webView = findViewById(R.id.webView)
+        webViewContainer = findViewById(R.id.webViewContainer)
         
         val toolbar = findViewById<Toolbar>(R.id.toolbar)
         setSupportActionBar(toolbar)
@@ -66,7 +70,6 @@ class ReaderActivity : AppCompatActivity() {
         val toolbarContent = layoutInflater.inflate(R.layout.reader_toolbar_content, toolbar, false)
         toolbar.addView(toolbarContent)
         
-        // Final strict grayscale for text and icons
         toolbarContent.findViewById<TextView>(R.id.tvBookTitle).setTextColor(0xFF000000.toInt())
         toolbarContent.findViewById<TextView>(R.id.tvChapterTitle).setTextColor(0xFF000000.toInt())
         toolbar.navigationIcon?.setTint(0xFF000000.toInt())
@@ -88,7 +91,7 @@ class ReaderActivity : AppCompatActivity() {
             loadSpineItem(0)
         }
 
-        updateUiState()
+        updateUiState(animate = false)
     }
 
     private fun updateBookTitles() {
@@ -137,35 +140,58 @@ class ReaderActivity : AppCompatActivity() {
         else injectScrollCss()
     }
 
-    fun updateUiState() {
+    fun updateUiState(animate: Boolean = true) {
         val windowInsetsController = WindowCompat.getInsetsController(window, window.decorView)
-        val params = webView.layoutParams as androidx.coordinatorlayout.widget.CoordinatorLayout.LayoutParams
+        val params = webViewContainer.layoutParams as FrameLayout.LayoutParams
 
         if (isFullscreenPref) {
-            params.behavior = null 
+            // FULLSCREEN MODE
+            params.topMargin = 0
+            params.bottomMargin = 0
             if (!isUiOverlayVisible) {
-                windowInsetsController.hide(WindowInsetsCompat.Type.systemBars())
-                windowInsetsController.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                windowInsetsController?.hide(WindowInsetsCompat.Type.systemBars())
+                windowInsetsController?.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
             } else {
-                windowInsetsController.show(WindowInsetsCompat.Type.systemBars())
+                windowInsetsController?.show(WindowInsetsCompat.Type.systemBars())
             }
-            appBarLayout.setBackgroundColor(0xCCF0F0F0.toInt()) // Light Gray Semi-Transparent
-            bottomPanel.setBackgroundColor(0xCCF0F0F0.toInt())
+            appBarLayout.setBackgroundColor(0xE6F0F0F0.toInt()) // 90% overlay
+            bottomPanel.setBackgroundColor(0xE6F0F0F0.toInt())
         } else {
-            params.behavior = AppBarLayout.ScrollingViewBehavior() 
-            windowInsetsController.show(WindowInsetsCompat.Type.systemBars())
+            // NORMAL MODE
+            windowInsetsController?.show(WindowInsetsCompat.Type.systemBars())
             isUiOverlayVisible = true
-            appBarLayout.setBackgroundColor(0xFFF0F0F0.toInt()) // Solid Light Gray
+            appBarLayout.post {
+                webViewContainer.updateLayoutParams<FrameLayout.LayoutParams> { 
+                    topMargin = appBarLayout.height 
+                    bottomMargin = bottomPanel.height
+                }
+            }
+            appBarLayout.setBackgroundColor(0xFFF0F0F0.toInt()) // Solid
             bottomPanel.setBackgroundColor(0xFFF0F0F0.toInt())
         }
         
-        appBarLayout.visibility = if (isUiOverlayVisible) View.VISIBLE else View.GONE
-        bottomPanel.visibility = if (isUiOverlayVisible && isFullscreenPref) View.VISIBLE else View.GONE
-        webView.layoutParams = params
+        webViewContainer.layoutParams = params
         
         if (isUiOverlayVisible) {
+            appBarLayout.visibility = View.VISIBLE
+            bottomPanel.visibility = View.VISIBLE
+            if (animate) {
+                appBarLayout.animate().translationY(0f).setDuration(300).start()
+                bottomPanel.animate().translationY(0f).setDuration(300).start()
+            } else {
+                appBarLayout.translationY = 0f
+                bottomPanel.translationY = 0f
+            }
             appBarLayout.bringToFront()
             bottomPanel.bringToFront()
+        } else {
+            if (animate) {
+                appBarLayout.animate().translationY(-appBarLayout.height.toFloat()).setDuration(300).withEndAction { appBarLayout.visibility = View.GONE }.start()
+                bottomPanel.animate().translationY(bottomPanel.height.toFloat()).setDuration(300).withEndAction { bottomPanel.visibility = View.GONE }.start()
+            } else {
+                appBarLayout.visibility = View.GONE
+                bottomPanel.visibility = View.GONE
+            }
         }
         
         webView.postDelayed({ applyCurrentSettings() }, 50)
@@ -255,18 +281,18 @@ class ReaderActivity : AppCompatActivity() {
     }
 
     private fun injectScrollCss() {
-        val css = "body { margin: 0; padding: 24px; line-height: 1.6; font-size: ${settings.fontSize}px; } p, div, h1, h2, h3, h4, h5, h6 { text-align: justify; hyphens: auto; margin-top: 0; margin-bottom: 1em; }"
+        val css = "body { margin: 0; padding: 24px; line-height: 1.6; font-size: ${settings.fontSize}px; } p, div, h1, h2, h3, h4, h5, h6 { text-align: justify; hyphens: auto; }"
         webView.evaluateJavascript("var style = document.getElementById('reader-style') || document.createElement('style'); style.id = 'reader-style'; style.innerHTML = '$css'; if (!style.parentNode) document.head.appendChild(style);", null)
     }
 
     private fun nextPage() {
-        webView.evaluateJavascript("(function() { var sw = document.documentElement.scrollWidth || document.body.scrollWidth; var sl = window.pageXOffset || document.documentElement.scrollLeft || document.body.scrollLeft; var pw = window.innerWidth; if (sw > (sl + pw + 10)) { window.scrollTo(sl + pw, 0); return 'ok'; } return 'next'; })();") { 
+        webView.evaluateJavascript("(function() { var sl = window.pageXOffset || document.documentElement.scrollLeft; var sw = document.documentElement.scrollWidth; var pw = window.innerWidth; if (sl + pw + 5 < sw) { window.scrollTo(sl + pw, 0); return 'ok'; } return 'next'; })();") { 
             if (it == "\"next\"") loadSpineItem(currentSpineIndex + 1)
         }
     }
 
     private fun prevPage() {
-        webView.evaluateJavascript("(function() { var sl = window.pageXOffset || document.documentElement.scrollLeft || document.body.scrollLeft; var pw = window.innerWidth; if (sl > 10) { window.scrollTo(sl - pw, 0); return 'ok'; } return 'prev'; })();") {
+        webView.evaluateJavascript("(function() { var sl = window.pageXOffset || document.documentElement.scrollLeft; var pw = window.innerWidth; if (sl > 5) { window.scrollTo(sl - pw, 0); return 'ok'; } return 'prev'; })();") {
             if (it == "\"prev\"") loadSpineItem(currentSpineIndex - 1)
         }
     }

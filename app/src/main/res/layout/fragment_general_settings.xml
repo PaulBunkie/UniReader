@@ -9,15 +9,13 @@
         android:id="@+id/switchPagedMode"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Paged Mode"
-        android:textColor="#000000" />
+        android:text="Paged Mode" />
 
     <com.google.android.material.materialswitch.MaterialSwitch
         android:id="@+id/switchFullscreen"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="16dp"
-        android:text="Fullscreen"
-        android:textColor="#000000" />
+        android:text="Fullscreen" />
 
 </LinearLayout>

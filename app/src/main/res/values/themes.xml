@@ -1,19 +1,9 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
-    <!-- Base application theme. -->
-    <style name="Base.Theme.UniReader" parent="Theme.Material3.Light.NoActionBar">
-        <item name="colorPrimary">@color/colorPrimary</item>
-        <item name="colorOnPrimary">@color/colorOnPrimary</item>
-        <item name="colorSecondary">@color/colorSecondary</item>
-        <item name="colorOnSecondary">@color/colorOnSecondary</item>
-        <item name="colorSurface">@color/colorSurface</item>
-        <item name="colorOnSurface">@color/colorOnSurface</item>
+    <style name="Base.Theme.UniReader" parent="Theme.Material3.DayNight.NoActionBar">
+        <!-- Reverting to pure system defaults -->
     </style>
 
     <style name="Theme.UniReader" parent="Base.Theme.UniReader" />
-
-    <style name="Theme.UniReader.AppBarOverlay" parent="ThemeOverlay.AppCompat.Light" />
-
-    <style name="Theme.UniReader.PopupOverlay" parent="ThemeOverlay.AppCompat.Light" />
 
     <style name="TransparentBottomSheetDialog" parent="Theme.Design.Light.BottomSheetDialog">
         <item name="bottomSheetStyle">@style/TransparentBottomSheetStyle</item>
