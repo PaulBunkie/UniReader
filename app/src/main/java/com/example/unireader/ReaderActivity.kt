@@ -3,34 +3,49 @@ package com.example.unireader
 import android.annotation.SuppressLint
 import android.net.Uri
 import android.os.Bundle
+import android.util.Log
 import android.view.Menu
 import android.view.MenuItem
 import android.view.MotionEvent
 import android.view.View
+import android.webkit.ConsoleMessage
+import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.Toolbar
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
+import com.google.android.material.appbar.AppBarLayout
 import java.io.ByteArrayInputStream
 import java.io.File
 import java.util.zip.ZipInputStream
 
-import android.webkit.ConsoleMessage
-import android.webkit.WebChromeClient
-import android.util.Log
+import android.view.WindowManager
+import android.os.Build
 
 class ReaderActivity : AppCompatActivity() {
 
     private val TAG = "ReaderActivity"
     private lateinit var webView: WebView
+    private lateinit var appBarLayout: AppBarLayout
     private var epubBook: EpubBook? = null
     private var currentSpineIndex = 0
     private var isPagedMode = true
+    private var isFullscreen = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        
+        // Allow content to flow under system bars
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            window.attributes.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+        }
+        
         setContentView(R.layout.activity_reader)
 
         val toolbar = findViewById<Toolbar>(R.id.toolbar)
@@ -38,6 +53,7 @@ class ReaderActivity : AppCompatActivity() {
         supportActionBar?.setDisplayHomeAsUpEnabled(true)
         supportActionBar?.title = "UniReader"
 
+        appBarLayout = findViewById(R.id.appBarLayout)
         webView = findViewById(R.id.webView)
         setupWebView()
 
@@ -51,6 +67,7 @@ class ReaderActivity : AppCompatActivity() {
 
     override fun onCreateOptionsMenu(menu: Menu): Boolean {
         menuInflater.inflate(R.menu.menu_reader, menu)
+        menu.findItem(R.id.action_fullscreen)?.isChecked = isFullscreen
         return true
     }
 
@@ -68,6 +85,11 @@ class ReaderActivity : AppCompatActivity() {
                 setReadingMode(true)
                 true
             }
+            R.id.action_fullscreen -> {
+                toggleFullscreen()
+                item.isChecked = isFullscreen
+                true
+            }
             else -> super.onOptionsItemSelected(item)
         }
     }
@@ -76,6 +98,33 @@ class ReaderActivity : AppCompatActivity() {
         if (isPagedMode == paged) return
         isPagedMode = paged
         webView.reload()
+    }
+
+    private fun toggleFullscreen() {
+        isFullscreen = !isFullscreen
+        applyFullscreen()
+    }
+
+    private fun applyFullscreen() {
+        val windowInsetsController = WindowCompat.getInsetsController(window, window.decorView)
+        if (isFullscreen) {
+            // Hide UI
+            supportActionBar?.hide()
+            appBarLayout.visibility = View.GONE
+            windowInsetsController.hide(WindowInsetsCompat.Type.systemBars())
+            windowInsetsController.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        } else {
+            // Show UI
+            supportActionBar?.show()
+            appBarLayout.visibility = View.VISIBLE
+            windowInsetsController.show(WindowInsetsCompat.Type.systemBars())
+        }
+        
+        // Use a global layout listener or a more robust way to wait for the view to resize
+        webView.post {
+            if (isPagedMode) injectPaginationCss()
+            else injectScrollCss()
+        }
     }
 
     @SuppressLint("SetJavaScriptEnabled", "ClickableViewAccessibility")
@@ -113,15 +162,27 @@ class ReaderActivity : AppCompatActivity() {
         }
 
         webView.setOnTouchListener { v, event ->
-            if (isPagedMode && event.action == MotionEvent.ACTION_UP) {
-                val width = v.width
-                val x = event.x
-                if (x < width / 3) {
-                    prevPage()
-                    return@setOnTouchListener true
-                } else if (x > width * 2 / 3) {
-                    nextPage()
-                    return@setOnTouchListener true
+            if (event.action == MotionEvent.ACTION_UP) {
+                if (isFullscreen) {
+                    // In fullscreen, center tap toggles UI back
+                    val width = v.width
+                    val x = event.x
+                    if (x > width / 3 && x < width * 2 / 3) {
+                        toggleFullscreen()
+                        return@setOnTouchListener true
+                    }
+                }
+                
+                if (isPagedMode) {
+                    val width = v.width
+                    val x = event.x
+                    if (x < width / 3) {
+                        prevPage()
+                        return@setOnTouchListener true
+                    } else if (x > width * 2 / 3) {
+                        nextPage()
+                        return@setOnTouchListener true
+                    }
                 }
             }
             false
@@ -218,6 +279,8 @@ class ReaderActivity : AppCompatActivity() {
                 padding: 0 !important;
                 line-height: 1.6 !important;
                 break-inside: auto !important;
+                text-align: justify !important;
+                hyphens: auto !important;
             }
         """.trimIndent().replace("\n", "")
 
@@ -243,6 +306,8 @@ class ReaderActivity : AppCompatActivity() {
             }
             p, div, h1, h2, h3, h4, h5, h6 {
                 line-height: 1.6 !important;
+                text-align: justify !important;
+                hyphens: auto !important;
             }
             img {
                 max-width: 100% !important;

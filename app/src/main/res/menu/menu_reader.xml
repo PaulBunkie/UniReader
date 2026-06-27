@@ -2,6 +2,11 @@
 <menu xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto">
     <item
+        android:id="@+id/action_fullscreen"
+        android:checkable="true"
+        android:title="Fullscreen"
+        app:showAsAction="never" />
+    <item
         android:id="@+id/action_reading_mode"
         android:title="Reading Mode"
         app:showAsAction="ifRoom">
