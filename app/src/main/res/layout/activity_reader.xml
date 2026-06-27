@@ -6,14 +6,17 @@
     android:layout_height="match_parent"
     android:background="#FFFFFF">
 
-    <!-- Overlay Layer: AppBar and Bottom Panel -->
-    <!-- We put them in a FrameLayout to overlay the WebView in Fullscreen mode if needed,
-         but we'll stick to dynamic margin adjustments for stability. -->
-
-    <WebView
-        android:id="@+id/webView"
+    <!-- Container for WebView to handle dynamic margins without resizing internal content -->
+    <FrameLayout
+        android:id="@+id/webViewContainer"
         android:layout_width="match_parent"
-        android:layout_height="match_parent" />
+        android:layout_height="match_parent">
+
+        <WebView
+            android:id="@+id/webView"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent" />
+    </FrameLayout>
 
     <com.google.android.material.appbar.AppBarLayout
         android:id="@+id/appBarLayout"
@@ -36,7 +39,8 @@
         android:layout_width="match_parent"
         android:layout_height="56dp"
         android:layout_gravity="bottom"
-        android:background="#FFF0F0F0">
+        android:background="#FFF0F0F0"
+        android:visibility="gone">
 
         <TextView
             android:id="@+id/tvProgressPlaceholder"

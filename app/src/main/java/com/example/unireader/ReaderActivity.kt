@@ -17,6 +17,7 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.widget.FrameLayout
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.Toolbar
@@ -36,6 +37,7 @@ import java.util.zip.ZipInputStream
 class ReaderActivity : AppCompatActivity() {
 
     lateinit var webView: WebView
+    private lateinit var webViewContainer: View
     private lateinit var appBarLayout: AppBarLayout
     private lateinit var bottomPanel: View
     private var epubBook: EpubBook? = null
@@ -45,6 +47,11 @@ class ReaderActivity : AppCompatActivity() {
     var isUiOverlayVisible = true
     
     private var shouldJumpToLastPage = false
+    private var chapterLoader: ChapterLoader? = null
+    
+    private var isChapterLoading = false
+    private var lastAppendedIndex = -1
+    private var firstPrependedIndex = Int.MAX_VALUE
 
     lateinit var settings: ReaderSettings
     private lateinit var gestureDetector: GestureDetectorCompat
@@ -63,6 +70,7 @@ class ReaderActivity : AppCompatActivity() {
         appBarLayout = findViewById(R.id.appBarLayout)
         bottomPanel = findViewById(R.id.bottomPanel)
         webView = findViewById(R.id.webView)
+        webViewContainer = findViewById(R.id.webViewContainer)
         
         val toolbar = findViewById<Toolbar>(R.id.toolbar)
         setSupportActionBar(toolbar)
@@ -88,8 +96,11 @@ class ReaderActivity : AppCompatActivity() {
         if (uriString != null) {
             val uri = Uri.parse(uriString)
             epubBook = EpubParser(this).parse(uri)
-            updateBookTitles()
-            loadSpineItem(0)
+            epubBook?.let { 
+                chapterLoader = ChapterLoader(this, it)
+                updateBookTitles()
+                loadSpineItem(0)
+            }
         }
 
         updateUiState(animate = false)
@@ -132,8 +143,14 @@ class ReaderActivity : AppCompatActivity() {
     }
 
     fun setReadingMode(paged: Boolean) {
+        if (isPagedMode == paged) return
         isPagedMode = paged
-        applyCurrentSettings()
+        
+        if (!isPagedMode) {
+            initSeamlessScroll()
+        } else {
+            webView.reload()
+        }
         updateUiState()
     }
 
@@ -144,26 +161,34 @@ class ReaderActivity : AppCompatActivity() {
 
     fun updateUiState(animate: Boolean = true) {
         val windowInsetsController = WindowCompat.getInsetsController(window, window.decorView)
-        val params = webView.layoutParams as CoordinatorLayout.LayoutParams
+        // WebViewContainer is inside a CoordinatorLayout (readerRoot)
+        val params = webViewContainer.layoutParams as CoordinatorLayout.LayoutParams
 
         if (isFullscreenPref) {
-            params.behavior = null 
             params.topMargin = 0
             params.bottomMargin = 0
             if (!isUiOverlayVisible) {
-                windowInsetsController.hide(WindowInsetsCompat.Type.systemBars())
-                windowInsetsController.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                windowInsetsController?.hide(WindowInsetsCompat.Type.systemBars())
+                windowInsetsController?.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                appBarLayout.visibility = View.GONE
+                bottomPanel.visibility = View.GONE
             } else {
-                windowInsetsController.show(WindowInsetsCompat.Type.systemBars())
+                windowInsetsController?.show(WindowInsetsCompat.Type.systemBars())
+                appBarLayout.visibility = View.VISIBLE
+                bottomPanel.visibility = View.VISIBLE
+                appBarLayout.bringToFront()
+                bottomPanel.bringToFront()
             }
             appBarLayout.setBackgroundColor(0xE6F0F0F0.toInt())
             bottomPanel.setBackgroundColor(0xE6F0F0F0.toInt())
         } else {
-            windowInsetsController.show(WindowInsetsCompat.Type.systemBars())
+            windowInsetsController?.show(WindowInsetsCompat.Type.systemBars())
             isUiOverlayVisible = true
-            params.behavior = null 
+            appBarLayout.visibility = View.VISIBLE
+            bottomPanel.visibility = View.VISIBLE
+            
             appBarLayout.post {
-                webView.updateLayoutParams<CoordinatorLayout.LayoutParams> { 
+                webViewContainer.updateLayoutParams<CoordinatorLayout.LayoutParams> { 
                     topMargin = appBarLayout.height 
                     bottomMargin = bottomPanel.height
                 }
@@ -172,15 +197,7 @@ class ReaderActivity : AppCompatActivity() {
             bottomPanel.setBackgroundColor(0xFFF0F0F0.toInt())
         }
         
-        webView.layoutParams = params
-        appBarLayout.visibility = if (isUiOverlayVisible) View.VISIBLE else View.GONE
-        bottomPanel.visibility = if (isUiOverlayVisible) View.VISIBLE else View.GONE
-        
-        if (isUiOverlayVisible) {
-            appBarLayout.bringToFront()
-            bottomPanel.bringToFront()
-        }
-        
+        webViewContainer.layoutParams = params
         webView.postDelayed({ applyCurrentSettings() }, 50)
     }
 
@@ -207,11 +224,26 @@ class ReaderActivity : AppCompatActivity() {
         webView.addJavascriptInterface(object {
             @JavascriptInterface
             fun onReachedBottom() {
-                runOnUiThread { loadNextSpineItem() }
+                runOnUiThread { 
+                    if (!isPagedMode && !isChapterLoading) {
+                        loadAndAppendChapter(lastAppendedIndex + 1)
+                    }
+                }
             }
             @JavascriptInterface
             fun onReachedTop() {
-                runOnUiThread { loadPrevSpineItem() }
+                runOnUiThread {
+                    if (!isPagedMode && !isChapterLoading) {
+                        loadAndPrependChapter(firstPrependedIndex - 1)
+                    }
+                }
+            }
+            @JavascriptInterface
+            fun onChapterEntered(index: Int) {
+                runOnUiThread {
+                    currentSpineIndex = index
+                    updateChapterTitle()
+                }
             }
         }, "AndroidReader")
 
@@ -224,12 +256,7 @@ class ReaderActivity : AppCompatActivity() {
             override fun onPageFinished(view: WebView?, url: String?) { 
                 applyCurrentSettings()
                 if (shouldJumpToLastPage) {
-                    webView.postDelayed({
-                        executeJumpToLastPage()
-                    }, 100)
-                }
-                if (!isPagedMode) {
-                    injectScrollListener()
+                    webView.postDelayed({ executeJumpToLastPage() }, 100)
                 }
             }
         }
@@ -239,29 +266,136 @@ class ReaderActivity : AppCompatActivity() {
         }
     }
 
-    private fun injectScrollListener() {
-        val js = """
-            window.removeEventListener('scroll', window._readerScrollHandler);
-            window._readerScrollHandler = function() {
-                var docHeight = Math.max(document.body.scrollHeight, document.documentElement.scrollHeight);
-                var winHeight = window.innerHeight;
-                var scrollPos = window.pageYOffset || document.documentElement.scrollTop || document.body.scrollTop;
-                
-                if ((winHeight + scrollPos) >= docHeight - 20) {
-                    AndroidReader.onReachedBottom();
-                }
-                if (scrollPos <= -20) {
-                    AndroidReader.onReachedTop();
-                }
-            };
-            window.addEventListener('scroll', window._readerScrollHandler);
+    private fun initSeamlessScroll() {
+        val html = """
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <style id="reader-style"></style>
+                <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+            </head>
+            <body>
+                <div id="chapters-container"></div>
+                <script>
+                    var observer = new IntersectionObserver(function(entries) {
+                        entries.forEach(function(entry) {
+                            if (entry.isIntersecting) {
+                                if (entry.target.id === 'bottom-sentinel') {
+                                    AndroidReader.onReachedBottom();
+                                } else if (entry.target.id === 'top-sentinel') {
+                                    AndroidReader.onReachedTop();
+                                } else {
+                                    var index = parseInt(entry.target.getAttribute('data-index'));
+                                    AndroidReader.onChapterEntered(index);
+                                }
+                            }
+                        });
+                    }, { threshold: 0.1 });
+
+                    function appendChapter(index, html) {
+                        var container = document.getElementById('chapters-container');
+                        var section = document.createElement('section');
+                        section.setAttribute('data-index', index);
+                        section.innerHTML = html;
+                        
+                        var oldSentinel = document.getElementById('bottom-sentinel');
+                        if (oldSentinel) {
+                            observer.unobserve(oldSentinel);
+                            oldSentinel.remove();
+                        }
+                        
+                        container.appendChild(section);
+                        observer.observe(section);
+                        
+                        var sentinel = document.createElement('div');
+                        sentinel.id = 'bottom-sentinel';
+                        sentinel.style.height = '100px';
+                        sentinel.style.width = '100%';
+                        container.appendChild(sentinel);
+                        observer.observe(sentinel);
+                    }
+
+                    function prependChapter(index, html) {
+                        var container = document.getElementById('chapters-container');
+                        var section = document.createElement('section');
+                        section.setAttribute('data-index', index);
+                        section.innerHTML = html;
+                        
+                        var oldSentinel = document.getElementById('top-sentinel');
+                        if (oldSentinel) {
+                            observer.unobserve(oldSentinel);
+                            oldSentinel.remove();
+                        }
+
+                        var oldHeight = container.scrollHeight;
+                        container.insertBefore(section, container.firstChild);
+                        observer.observe(section);
+
+                        var newHeight = container.scrollHeight;
+                        window.scrollBy(0, newHeight - oldHeight);
+                        
+                        var sentinel = document.createElement('div');
+                        sentinel.id = 'top-sentinel';
+                        sentinel.style.height = '100px';
+                        sentinel.style.width = '100%';
+                        container.insertBefore(sentinel, container.firstChild);
+                        observer.observe(sentinel);
+                    }
+                </script>
+            </body>
+            </html>
         """.trimIndent()
-        webView.evaluateJavascript(js, null)
+        
+        lastAppendedIndex = -1
+        firstPrependedIndex = Int.MAX_VALUE
+        isChapterLoading = false
+        webView.loadDataWithBaseURL("epub://seamless/", html, "text/html", "UTF-8", null)
+        
+        webView.postDelayed({
+            loadAndAppendChapter(currentSpineIndex)
+            loadAndAppendChapter(currentSpineIndex + 1)
+            loadAndPrependChapter(currentSpineIndex - 1)
+        }, 500)
+    }
+
+    private fun loadAndAppendChapter(index: Int) {
+        val loader = chapterLoader ?: return
+        if (index < 0 || index >= (epubBook?.spine?.size ?: 0) || index <= lastAppendedIndex) return
+        
+        isChapterLoading = true
+        val html = loader.loadChapterHtml(index) ?: run {
+            isChapterLoading = false
+            return
+        }
+        
+        if (lastAppendedIndex == -1) firstPrependedIndex = index
+        lastAppendedIndex = index
+        
+        val escapedHtml = html.replace("`", "\\`").replace("${"$"}", "\\$")
+        webView.evaluateJavascript("appendChapter($index, `$escapedHtml`);") {
+            isChapterLoading = false
+        }
+    }
+
+    private fun loadAndPrependChapter(index: Int) {
+        val loader = chapterLoader ?: return
+        if (index < 0 || index >= (epubBook?.spine?.size ?: 0) || index >= firstPrependedIndex) return
+        
+        isChapterLoading = true
+        val html = loader.loadChapterHtml(index) ?: run {
+            isChapterLoading = false
+            return
+        }
+        
+        firstPrependedIndex = index
+        val escapedHtml = html.replace("`", "\\`").replace("${"$"}", "\\$")
+        webView.evaluateJavascript("prependChapter($index, `$escapedHtml`);") {
+            isChapterLoading = false
+        }
     }
 
     private fun loadNextSpineItem() {
-        val book = epubBook ?: return
-        if (currentSpineIndex < book.spine.size - 1) {
+        if (currentSpineIndex < (epubBook?.spine?.size ?: 0) - 1) {
             loadSpineItem(currentSpineIndex + 1)
         }
     }
@@ -345,7 +479,7 @@ class ReaderActivity : AppCompatActivity() {
     private fun injectScrollCss() {
         val initialVisibility = if (shouldJumpToLastPage) "hidden" else "visible"
         val css = """
-            html, body { overflow: auto !important; height: auto !important; width: 100% !important; }
+            html, body { overflow-x: hidden !important; overflow-y: auto !important; height: auto !important; }
             body { 
                 margin: 0; padding: 24px; line-height: 1.6; font-family: sans-serif; 
                 font-size: ${settings.fontSize}px; visibility: $initialVisibility; 
