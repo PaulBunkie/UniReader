@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.util.Log
 import android.view.GestureDetector
 import android.view.Menu
 import android.view.MenuItem
@@ -146,37 +147,28 @@ class ReaderActivity : AppCompatActivity() {
         val params = webView.layoutParams as CoordinatorLayout.LayoutParams
 
         if (isFullscreenPref) {
-            // FULLSCREEN: WebView is 100% of the screen. Panels are overlays.
             params.behavior = null 
             params.topMargin = 0
             params.bottomMargin = 0
-            
             if (!isUiOverlayVisible) {
-                windowInsetsController?.hide(WindowInsetsCompat.Type.systemBars())
-                windowInsetsController?.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                windowInsetsController.hide(WindowInsetsCompat.Type.systemBars())
+                windowInsetsController.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
             } else {
-                windowInsetsController?.show(WindowInsetsCompat.Type.systemBars())
+                windowInsetsController.show(WindowInsetsCompat.Type.systemBars())
             }
-            
-            appBarLayout.setBackgroundColor(0xE6F0F0F0.toInt()) // Semi-transparent overlay
+            appBarLayout.setBackgroundColor(0xE6F0F0F0.toInt())
             bottomPanel.setBackgroundColor(0xE6F0F0F0.toInt())
-            
         } else {
-            // NORMAL: WebView is squeezed between panels. No overlap possible.
-            windowInsetsController?.show(WindowInsetsCompat.Type.systemBars())
+            windowInsetsController.show(WindowInsetsCompat.Type.systemBars())
             isUiOverlayVisible = true
-            
-            params.behavior = null // We'll use strict margins for stability
-            
-            // Post update to ensure layout is ready
+            params.behavior = null 
             appBarLayout.post {
-                webView.updateLayoutParams<CoordinatorLayout.LayoutParams> {
-                    topMargin = appBarLayout.height
+                webView.updateLayoutParams<CoordinatorLayout.LayoutParams> { 
+                    topMargin = appBarLayout.height 
                     bottomMargin = bottomPanel.height
                 }
             }
-            
-            appBarLayout.setBackgroundColor(0xFFF0F0F0.toInt()) // Solid light gray
+            appBarLayout.setBackgroundColor(0xFFF0F0F0.toInt())
             bottomPanel.setBackgroundColor(0xFFF0F0F0.toInt())
         }
         
@@ -217,6 +209,10 @@ class ReaderActivity : AppCompatActivity() {
             fun onReachedBottom() {
                 runOnUiThread { loadNextSpineItem() }
             }
+            @JavascriptInterface
+            fun onReachedTop() {
+                runOnUiThread { loadPrevSpineItem() }
+            }
         }, "AndroidReader")
 
         webView.webViewClient = object : WebViewClient() {
@@ -245,17 +241,27 @@ class ReaderActivity : AppCompatActivity() {
 
     private fun injectScrollListener() {
         val js = """
-            window.onscroll = function() {
-                if ((window.innerHeight + window.pageYOffset) >= document.body.offsetHeight - 10) {
+            window.removeEventListener('scroll', window._readerScrollHandler);
+            window._readerScrollHandler = function() {
+                var docHeight = Math.max(document.body.scrollHeight, document.documentElement.scrollHeight);
+                var winHeight = window.innerHeight;
+                var scrollPos = window.pageYOffset || document.documentElement.scrollTop || document.body.scrollTop;
+                
+                if ((winHeight + scrollPos) >= docHeight - 20) {
                     AndroidReader.onReachedBottom();
                 }
+                if (scrollPos <= -20) {
+                    AndroidReader.onReachedTop();
+                }
             };
+            window.addEventListener('scroll', window._readerScrollHandler);
         """.trimIndent()
         webView.evaluateJavascript(js, null)
     }
 
     private fun loadNextSpineItem() {
-        if (currentSpineIndex < (epubBook?.spine?.size ?: 0) - 1) {
+        val book = epubBook ?: return
+        if (currentSpineIndex < book.spine.size - 1) {
             loadSpineItem(currentSpineIndex + 1)
         }
     }
@@ -339,7 +345,7 @@ class ReaderActivity : AppCompatActivity() {
     private fun injectScrollCss() {
         val initialVisibility = if (shouldJumpToLastPage) "hidden" else "visible"
         val css = """
-            html, body { overflow: auto !important; height: auto !important; }
+            html, body { overflow: auto !important; height: auto !important; width: 100% !important; }
             body { 
                 margin: 0; padding: 24px; line-height: 1.6; font-family: sans-serif; 
                 font-size: ${settings.fontSize}px; visibility: $initialVisibility; 
