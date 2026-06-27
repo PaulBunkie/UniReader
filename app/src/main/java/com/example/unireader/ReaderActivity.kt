@@ -2,20 +2,22 @@ package com.example.unireader
 
 import android.annotation.SuppressLint
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
-import android.util.Log
+import android.view.GestureDetector
 import android.view.Menu
 import android.view.MenuItem
 import android.view.MotionEvent
 import android.view.View
-import android.webkit.ConsoleMessage
-import android.webkit.WebChromeClient
+import android.view.WindowManager
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.Toolbar
+import androidx.core.view.GestureDetectorCompat
+import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -24,23 +26,22 @@ import java.io.ByteArrayInputStream
 import java.io.File
 import java.util.zip.ZipInputStream
 
-import android.view.WindowManager
-import android.os.Build
-
 class ReaderActivity : AppCompatActivity() {
 
-    private val TAG = "ReaderActivity"
     private lateinit var webView: WebView
     private lateinit var appBarLayout: AppBarLayout
     private var epubBook: EpubBook? = null
     private var currentSpineIndex = 0
     private var isPagedMode = true
-    private var isFullscreen = false
+    private var isFullscreenPref = false // User preference from menu
+    private var isUiOverlayVisible = true
+
+    private lateinit var gestureDetector: GestureDetectorCompat
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
-        // Allow content to flow under system bars
+        // Initial setup for edge-to-edge
         WindowCompat.setDecorFitsSystemWindows(window, false)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             window.attributes.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
@@ -48,14 +49,23 @@ class ReaderActivity : AppCompatActivity() {
         
         setContentView(R.layout.activity_reader)
 
+        appBarLayout = findViewById(R.id.appBarLayout)
+        webView = findViewById(R.id.webView)
+        
         val toolbar = findViewById<Toolbar>(R.id.toolbar)
         setSupportActionBar(toolbar)
         supportActionBar?.setDisplayHomeAsUpEnabled(true)
         supportActionBar?.title = "UniReader"
 
-        appBarLayout = findViewById(R.id.appBarLayout)
-        webView = findViewById(R.id.webView)
+        // Sync AppBar padding with status bar
+        ViewCompat.setOnApplyWindowInsetsListener(appBarLayout) { v, insets ->
+            val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            v.setPadding(0, systemBars.top, 0, 0)
+            insets
+        }
+
         setupWebView()
+        setupGestures()
 
         val uriString = intent.getStringExtra("epub_uri")
         if (uriString != null) {
@@ -63,31 +73,27 @@ class ReaderActivity : AppCompatActivity() {
             epubBook = EpubParser(this).parse(uri)
             loadSpineItem(0)
         }
+
+        updateUiState()
     }
 
     override fun onCreateOptionsMenu(menu: Menu): Boolean {
         menuInflater.inflate(R.menu.menu_reader, menu)
-        menu.findItem(R.id.action_fullscreen)?.isChecked = isFullscreen
+        menu.findItem(R.id.action_fullscreen)?.isChecked = isFullscreenPref
         return true
     }
 
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
         return when (item.itemId) {
-            android.R.id.home -> {
-                finish()
-                true
-            }
-            R.id.mode_scroll -> {
-                setReadingMode(false)
-                true
-            }
-            R.id.mode_paged -> {
-                setReadingMode(true)
-                true
-            }
+            android.R.id.home -> { finish(); true }
+            R.id.mode_scroll -> { setReadingMode(false); true }
+            R.id.mode_paged -> { setReadingMode(true); true }
             R.id.action_fullscreen -> {
-                toggleFullscreen()
-                item.isChecked = isFullscreen
+                isFullscreenPref = !isFullscreenPref
+                item.isChecked = isFullscreenPref
+                // Reset UI visibility state when toggling preference
+                isUiOverlayVisible = !isFullscreenPref
+                updateUiState()
                 true
             }
             else -> super.onOptionsItemSelected(item)
@@ -100,31 +106,53 @@ class ReaderActivity : AppCompatActivity() {
         webView.reload()
     }
 
-    private fun toggleFullscreen() {
-        isFullscreen = !isFullscreen
-        applyFullscreen()
-    }
-
-    private fun applyFullscreen() {
+    private fun updateUiState() {
         val windowInsetsController = WindowCompat.getInsetsController(window, window.decorView)
-        if (isFullscreen) {
-            // Hide UI
-            supportActionBar?.hide()
-            appBarLayout.visibility = View.GONE
+        val params = webView.layoutParams as androidx.coordinatorlayout.widget.CoordinatorLayout.LayoutParams
+
+        if (isFullscreenPref) {
+            // FULLSCREEN MODE: Overlay UI
+            params.behavior = null // WebView fills entire screen
             windowInsetsController.hide(WindowInsetsCompat.Type.systemBars())
             windowInsetsController.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            appBarLayout.visibility = if (isUiOverlayVisible) View.VISIBLE else View.GONE
         } else {
-            // Show UI
-            supportActionBar?.show()
-            appBarLayout.visibility = View.VISIBLE
+            // NORMAL MODE: Fixed UI
+            params.behavior = AppBarLayout.ScrollingViewBehavior() // WebView starts below AppBar
             windowInsetsController.show(WindowInsetsCompat.Type.systemBars())
+            appBarLayout.visibility = View.VISIBLE
+            isUiOverlayVisible = true
         }
         
-        // Use a global layout listener or a more robust way to wait for the view to resize
-        webView.post {
+        webView.layoutParams = params
+        
+        // Refresh CSS to account for new viewport size if dimensions changed
+        webView.postDelayed({
             if (isPagedMode) injectPaginationCss()
             else injectScrollCss()
-        }
+        }, 50)
+    }
+
+    private fun setupGestures() {
+        gestureDetector = GestureDetectorCompat(this, object : GestureDetector.SimpleOnGestureListener() {
+            override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
+                val width = webView.width
+                val x = e.x
+                
+                when {
+                    x < width * 0.3 -> if (isPagedMode) prevPage()
+                    x > width * 0.7 -> if (isPagedMode) nextPage()
+                    else -> {
+                        // Center tap only toggles UI in Fullscreen mode
+                        if (isFullscreenPref) {
+                            isUiOverlayVisible = !isUiOverlayVisible
+                            updateUiState()
+                        }
+                    }
+                }
+                return true
+            }
+        })
     }
 
     @SuppressLint("SetJavaScriptEnabled", "ClickableViewAccessibility")
@@ -132,18 +160,8 @@ class ReaderActivity : AppCompatActivity() {
         webView.settings.javaScriptEnabled = true
         webView.settings.allowFileAccess = true
         
-        webView.webChromeClient = object : WebChromeClient() {
-            override fun onConsoleMessage(consoleMessage: ConsoleMessage?): Boolean {
-                Log.d("WebViewConsole", "${consoleMessage?.message()} -- From line ${consoleMessage?.lineNumber()} of ${consoleMessage?.sourceId()}")
-                return true
-            }
-        }
-
         webView.webViewClient = object : WebViewClient() {
-            override fun shouldInterceptRequest(
-                view: WebView?,
-                request: WebResourceRequest?
-            ): WebResourceResponse? {
+            override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): WebResourceResponse? {
                 val url = request?.url?.toString() ?: return null
                 if (url.startsWith("epub://")) {
                     val path = url.replace("epub://", "")
@@ -153,52 +171,26 @@ class ReaderActivity : AppCompatActivity() {
             }
 
             override fun onPageFinished(view: WebView?, url: String?) {
-                if (isPagedMode) {
-                    injectPaginationCss()
-                } else {
-                    injectScrollCss()
-                }
+                if (isPagedMode) injectPaginationCss()
+                else injectScrollCss()
             }
         }
 
-        webView.setOnTouchListener { v, event ->
-            if (event.action == MotionEvent.ACTION_UP) {
-                if (isFullscreen) {
-                    // In fullscreen, center tap toggles UI back
-                    val width = v.width
-                    val x = event.x
-                    if (x > width / 3 && x < width * 2 / 3) {
-                        toggleFullscreen()
-                        return@setOnTouchListener true
-                    }
-                }
-                
-                if (isPagedMode) {
-                    val width = v.width
-                    val x = event.x
-                    if (x < width / 3) {
-                        prevPage()
-                        return@setOnTouchListener true
-                    } else if (x > width * 2 / 3) {
-                        nextPage()
-                        return@setOnTouchListener true
-                    }
-                }
-            }
-            false
+        webView.setOnTouchListener { _, event ->
+            val handled = gestureDetector.onTouchEvent(event)
+            // Only handle navigation/toggle if it was a confirmed tap.
+            // Returning false for everything else allows WebView to handle long press for selection.
+            handled
         }
     }
 
     private fun loadSpineItem(index: Int) {
         val book = epubBook ?: return
         if (index < 0 || index >= book.spine.size) return
-        
         currentSpineIndex = index
         val item = book.spine[index]
-        
         val opfDir = File(book.opfPath).parent ?: ""
         val fullPath = if (opfDir.isEmpty()) item.href else "$opfDir/${item.href}"
-        
         webView.loadUrl("epub://$fullPath")
     }
 
@@ -209,148 +201,67 @@ class ReaderActivity : AppCompatActivity() {
                 val zip = ZipInputStream(inputStream)
                 var entry = zip.nextEntry
                 while (entry != null) {
-                    val entryName = entry.name.replace("\\", "/")
-                    val targetPath = path.replace("\\", "/")
-                    
-                    if (entryName == targetPath) {
+                    if (entry.name.replace("\\", "/") == path.replace("\\", "/")) {
                         val bytes = zip.readBytes()
-                        val mimeType = getMimeType(path)
-                        return WebResourceResponse(mimeType, "UTF-8", ByteArrayInputStream(bytes))
+                        return WebResourceResponse(getMimeType(path), "UTF-8", ByteArrayInputStream(bytes))
                     }
                     entry = zip.nextEntry
                 }
             }
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
+        } catch (e: Exception) { e.printStackTrace() }
         return null
     }
 
-    private fun getMimeType(path: String): String {
-        return when {
-            path.endsWith(".html") || path.endsWith(".xhtml") -> "text/html"
-            path.endsWith(".css") -> "text/css"
-            path.endsWith(".jpg") || path.endsWith(".jpeg") -> "image/jpeg"
-            path.endsWith(".png") -> "image/png"
-            path.endsWith(".gif") -> "image/gif"
-            else -> "application/octet-stream"
-        }
+    private fun getMimeType(path: String) = when {
+        path.endsWith(".html") || path.endsWith(".xhtml") -> "text/html"
+        path.endsWith(".css") -> "text/css"
+        path.endsWith(".jpg") || path.endsWith(".jpeg") -> "image/jpeg"
+        path.endsWith(".png") -> "image/png"
+        path.endsWith(".gif") -> "image/gif"
+        else -> "application/octet-stream"
     }
 
     private fun injectPaginationCss() {
         val css = """
-            html {
-                margin: 0 !important;
-                padding: 0 !important;
-                height: 100vh !important;
-                width: 100vw !important;
-                overflow: hidden !important;
+            html { margin: 0; padding: 0; height: 100vh; width: 100vw; overflow: hidden; }
+            body { 
+                margin: 0; padding: 0; height: 100vh; width: 100vw; 
+                column-count: 1; column-gap: 0; 
+                -webkit-column-count: 1; -webkit-column-gap: 0;
+                display: block; position: relative; box-sizing: border-box; line-height: 1.6;
             }
-            body {
-                margin: 0 !important;
-                padding: 0 !important;
-                height: 100vh !important;
-                width: 100vw !important;
-                column-count: 1 !important;
-                column-gap: 0 !important;
-                column-fill: auto !important;
-                -webkit-column-count: 1 !important;
-                -webkit-column-gap: 0 !important;
-                display: block !important;
-                position: relative !important;
-                box-sizing: border-box !important;
-                line-height: 1.6 !important;
-            }
-            * {
-                max-width: 100vw !important;
-                box-sizing: border-box !important;
-                word-wrap: break-word !important;
-            }
-            img {
-                display: block !important;
-                max-width: 90% !important;
-                max-height: 80% !important;
-                margin: 10px auto !important;
-                object-fit: contain !important;
-            }
-            p, div, h1, h2, h3, h4, h5, h6 {
-                margin-left: 5vw !important;
-                margin-right: 5vw !important;
-                padding: 0 !important;
-                line-height: 1.6 !important;
-                break-inside: auto !important;
-                text-align: justify !important;
-                hyphens: auto !important;
+            * { max-width: 100vw; box-sizing: border-box; word-wrap: break-word; }
+            img { display: block; max-width: 90%; max-height: 80%; margin: 10px auto; object-fit: contain; }
+            p, div, h1, h2, h3, h4, h5, h6 { 
+                margin-left: 6vw; margin-right: 6vw; margin-top: 0; margin-bottom: 1em;
+                text-align: justify; hyphens: auto; line-height: 1.6;
             }
         """.trimIndent().replace("\n", "")
 
-        val js = """
-            var meta = document.createElement('meta');
-            meta.name = 'viewport';
-            meta.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no';
-            document.head.appendChild(meta);
-            var style = document.createElement('style');
-            style.innerHTML = '$css';
-            document.head.appendChild(style);
-        """.trimIndent()
-        webView.evaluateJavascript(js, null)
+        webView.evaluateJavascript("""
+            var style = document.getElementById('reader-style') || document.createElement('style');
+            style.id = 'reader-style'; style.innerHTML = '$css';
+            if (!style.parentNode) document.head.appendChild(style);
+            var meta = document.querySelector('meta[name="viewport"]') || document.createElement('meta');
+            meta.name = 'viewport'; meta.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no';
+            if (!meta.parentNode) document.head.appendChild(meta);
+        """.trimIndent(), null)
     }
 
     private fun injectScrollCss() {
-        val css = """
-            body {
-                margin: 0 !important;
-                padding: 20px !important;
-                overflow-x: hidden !important;
-                line-height: 1.6 !important;
-            }
-            p, div, h1, h2, h3, h4, h5, h6 {
-                line-height: 1.6 !important;
-                text-align: justify !important;
-                hyphens: auto !important;
-            }
-            img {
-                max-width: 100% !important;
-            }
-        """.trimIndent().replace("\n", "")
-        val js = "var style = document.createElement('style'); style.innerHTML = '$css'; document.head.appendChild(style);"
-        webView.evaluateJavascript(js, null)
+        val css = "body { margin: 0; padding: 24px; line-height: 1.6; } p, div, h1, h2, h3, h4, h5, h6 { text-align: justify; hyphens: auto; margin-top: 0; margin-bottom: 1em; }"
+        webView.evaluateJavascript("var style = document.getElementById('reader-style') || document.createElement('style'); style.id = 'reader-style'; style.innerHTML = '$css'; if (!style.parentNode) document.head.appendChild(style);", null)
     }
 
     private fun nextPage() {
-        webView.evaluateJavascript(
-            "(function() { " +
-            "  var totalWidth = document.documentElement.scrollWidth || document.body.scrollWidth; " +
-            "  var currentScroll = window.pageXOffset || document.documentElement.scrollLeft || document.body.scrollLeft; " +
-            "  var pageWidth = window.innerWidth; " +
-            "  if (totalWidth > (currentScroll + pageWidth + 10)) { " +
-            "    window.scrollTo(currentScroll + pageWidth, 0); " +
-            "    return 'scrolled'; " +
-            "  } " +
-            "  return 'next_chapter'; " +
-            "})();"
-        ) { result ->
-            if (result == "\"next_chapter\"") {
-                loadSpineItem(currentSpineIndex + 1)
-            }
+        webView.evaluateJavascript("(function() { var sw = document.documentElement.scrollWidth || document.body.scrollWidth; var sl = window.pageXOffset || document.documentElement.scrollLeft || document.body.scrollLeft; var pw = window.innerWidth; if (sw > (sl + pw + 10)) { window.scrollTo(sl + pw, 0); return 'ok'; } return 'next'; })();") { 
+            if (it == "\"next\"") loadSpineItem(currentSpineIndex + 1)
         }
     }
 
     private fun prevPage() {
-        webView.evaluateJavascript(
-            "(function() { " +
-            "  var currentScroll = window.pageXOffset || document.documentElement.scrollLeft || document.body.scrollLeft; " +
-            "  var pageWidth = window.innerWidth; " +
-            "  if (currentScroll > 10) { " +
-            "    window.scrollTo(currentScroll - pageWidth, 0); " +
-            "    return 'scrolled'; " +
-            "  } " +
-            "  return 'prev_chapter'; " +
-            "})();"
-        ) { result ->
-            if (result == "\"prev_chapter\"") {
-                loadSpineItem(currentSpineIndex - 1)
-            }
+        webView.evaluateJavascript("(function() { var sl = window.pageXOffset || document.documentElement.scrollLeft || document.body.scrollLeft; var pw = window.innerWidth; if (sl > 10) { window.scrollTo(sl - pw, 0); return 'ok'; } return 'prev'; })();") {
+            if (it == "\"prev\"") loadSpineItem(currentSpineIndex - 1)
         }
     }
 }
