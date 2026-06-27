@@ -4,7 +4,6 @@ import android.annotation.SuppressLint
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import android.util.Log
 import android.view.GestureDetector
 import android.view.Menu
 import android.view.MenuItem
@@ -12,6 +11,7 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
+import android.webkit.JavascriptInterface
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
@@ -25,7 +25,7 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
-import androidx.core.view.updatePadding
+import androidx.core.view.updateLayoutParams
 import com.google.android.material.appbar.AppBarLayout
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import java.io.ByteArrayInputStream
@@ -133,6 +133,7 @@ class ReaderActivity : AppCompatActivity() {
     fun setReadingMode(paged: Boolean) {
         isPagedMode = paged
         applyCurrentSettings()
+        updateUiState()
     }
 
     fun applyCurrentSettings() {
@@ -145,28 +146,43 @@ class ReaderActivity : AppCompatActivity() {
         val params = webView.layoutParams as CoordinatorLayout.LayoutParams
 
         if (isFullscreenPref) {
-            // FULLSCREEN: No behavior (fills screen), bars follow overlay visibility
+            // FULLSCREEN: WebView is 100% of the screen. Panels are overlays.
             params.behavior = null 
+            params.topMargin = 0
+            params.bottomMargin = 0
+            
             if (!isUiOverlayVisible) {
                 windowInsetsController?.hide(WindowInsetsCompat.Type.systemBars())
                 windowInsetsController?.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
             } else {
                 windowInsetsController?.show(WindowInsetsCompat.Type.systemBars())
             }
-            appBarLayout.alpha = 0.9f
-            bottomPanel.alpha = 0.9f
+            
+            appBarLayout.setBackgroundColor(0xE6F0F0F0.toInt()) // Semi-transparent overlay
+            bottomPanel.setBackgroundColor(0xE6F0F0F0.toInt())
+            
         } else {
-            // NORMAL: Behavior active (starts below toolbar), bars shown
-            params.behavior = AppBarLayout.ScrollingViewBehavior() 
+            // NORMAL: WebView is squeezed between panels. No overlap possible.
             windowInsetsController?.show(WindowInsetsCompat.Type.systemBars())
             isUiOverlayVisible = true
-            appBarLayout.alpha = 1.0f
-            bottomPanel.alpha = 1.0f
+            
+            params.behavior = null // We'll use strict margins for stability
+            
+            // Post update to ensure layout is ready
+            appBarLayout.post {
+                webView.updateLayoutParams<CoordinatorLayout.LayoutParams> {
+                    topMargin = appBarLayout.height
+                    bottomMargin = bottomPanel.height
+                }
+            }
+            
+            appBarLayout.setBackgroundColor(0xFFF0F0F0.toInt()) // Solid light gray
+            bottomPanel.setBackgroundColor(0xFFF0F0F0.toInt())
         }
         
         webView.layoutParams = params
         appBarLayout.visibility = if (isUiOverlayVisible) View.VISIBLE else View.GONE
-        bottomPanel.visibility = if (isUiOverlayVisible && isFullscreenPref) View.VISIBLE else View.GONE
+        bottomPanel.visibility = if (isUiOverlayVisible) View.VISIBLE else View.GONE
         
         if (isUiOverlayVisible) {
             appBarLayout.bringToFront()
@@ -195,6 +211,14 @@ class ReaderActivity : AppCompatActivity() {
     private fun setupWebView() {
         webView.settings.javaScriptEnabled = true
         webView.settings.allowFileAccess = true
+        
+        webView.addJavascriptInterface(object {
+            @JavascriptInterface
+            fun onReachedBottom() {
+                runOnUiThread { loadNextSpineItem() }
+            }
+        }, "AndroidReader")
+
         webView.webViewClient = object : WebViewClient() {
             override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): WebResourceResponse? {
                 val url = request?.url?.toString() ?: return null
@@ -208,11 +232,38 @@ class ReaderActivity : AppCompatActivity() {
                         executeJumpToLastPage()
                     }, 100)
                 }
+                if (!isPagedMode) {
+                    injectScrollListener()
+                }
             }
         }
         webView.setOnTouchListener { _, event ->
             val handled = gestureDetector.onTouchEvent(event)
-            !handled
+            if (isPagedMode) handled else false
+        }
+    }
+
+    private fun injectScrollListener() {
+        val js = """
+            window.onscroll = function() {
+                if ((window.innerHeight + window.pageYOffset) >= document.body.offsetHeight - 10) {
+                    AndroidReader.onReachedBottom();
+                }
+            };
+        """.trimIndent()
+        webView.evaluateJavascript(js, null)
+    }
+
+    private fun loadNextSpineItem() {
+        if (currentSpineIndex < (epubBook?.spine?.size ?: 0) - 1) {
+            loadSpineItem(currentSpineIndex + 1)
+        }
+    }
+
+    private fun loadPrevSpineItem() {
+        if (currentSpineIndex > 0) {
+            shouldJumpToLastPage = true
+            loadSpineItem(currentSpineIndex - 1)
         }
     }
 
@@ -278,7 +329,7 @@ class ReaderActivity : AppCompatActivity() {
                 font-family: sans-serif; font-size: ${settings.fontSize}px;
                 visibility: $initialVisibility;
             }
-            p, div, h1, h2, h3, h4, h5, h6 { margin-left: 6vw; margin-right: 6vw; text-align: justify; hyphens: auto; }
+            p, div, h1, h2, h3, h4, h5, h6 { margin: 0 6vw 1em 6vw; text-align: justify; hyphens: auto; }
             * { max-width: 100vw; box-sizing: border-box; word-wrap: break-word; }
             img { display: block; max-width: 90%; max-height: 80%; margin: 10px auto; object-fit: contain; }
         """.trimIndent().replace("\n", "")
@@ -287,22 +338,27 @@ class ReaderActivity : AppCompatActivity() {
 
     private fun injectScrollCss() {
         val initialVisibility = if (shouldJumpToLastPage) "hidden" else "visible"
-        val css = "body { margin: 0; padding: 24px; line-height: 1.6; font-size: ${settings.fontSize}px; visibility: $initialVisibility; } p, div, h1, h2, h3, h4, h5, h6 { text-align: justify; hyphens: auto; }"
+        val css = """
+            html, body { overflow: auto !important; height: auto !important; }
+            body { 
+                margin: 0; padding: 24px; line-height: 1.6; font-family: sans-serif; 
+                font-size: ${settings.fontSize}px; visibility: $initialVisibility; 
+                display: block !important;
+            } 
+            p, div, h1, h2, h3, h4, h5, h6 { text-align: justify; hyphens: auto; margin-top: 0; margin-bottom: 1em; }
+        """.trimIndent().replace("\n", "")
         webView.evaluateJavascript("var style = document.getElementById('reader-style') || document.createElement('style'); style.id = 'reader-style'; style.innerHTML = '$css'; if (!style.parentNode) document.head.appendChild(style);", null)
     }
 
     private fun nextPage() {
         webView.evaluateJavascript("(function() { var sw = document.documentElement.scrollWidth || document.body.scrollWidth; var sl = window.pageXOffset || document.documentElement.scrollLeft || document.body.scrollLeft; var pw = window.innerWidth; if (sw > (sl + pw + 10)) { window.scrollTo(sl + pw, 0); return 'ok'; } return 'next'; })();") { 
-            if (it == "\"next\"") loadSpineItem(currentSpineIndex + 1)
+            if (it == "\"next\"") loadNextSpineItem()
         }
     }
 
     private fun prevPage() {
         webView.evaluateJavascript("(function() { var sl = window.pageXOffset || document.documentElement.scrollLeft || document.body.scrollLeft; var pw = window.innerWidth; if (sl > 10) { window.scrollTo(sl - pw, 0); return 'ok'; } return 'prev'; })();") {
-            if (it == "\"prev\"") {
-                shouldJumpToLastPage = true
-                loadSpineItem(currentSpineIndex - 1)
-            }
+            if (it == "\"prev\"") loadPrevSpineItem()
         }
     }
 }
