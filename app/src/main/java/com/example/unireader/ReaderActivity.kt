@@ -52,7 +52,8 @@ class ReaderActivity : AppCompatActivity() {
     private var lastAppendedIndex = -1
     private var firstPrependedIndex = Int.MAX_VALUE
     
-    private var pendingRelativeProgress = -1.0
+    // High-precision Element Index
+    private var pendingElementIndex = -1
 
     lateinit var settings: ReaderSettings
     private lateinit var gestureDetector: GestureDetectorCompat
@@ -146,9 +147,9 @@ class ReaderActivity : AppCompatActivity() {
     fun setReadingMode(paged: Boolean) {
         if (isPagedMode == paged) return
         
-        captureCurrentProgress { progress ->
+        captureCurrentElementIndex { idx ->
             isPagedMode = paged
-            pendingRelativeProgress = progress
+            pendingElementIndex = idx
             
             if (!isPagedMode) {
                 initSeamlessScroll()
@@ -159,15 +160,26 @@ class ReaderActivity : AppCompatActivity() {
         }
     }
 
-    private fun captureCurrentProgress(onCaptured: (Double) -> Unit) {
-        if (isPagedMode) {
-            webView.evaluateJavascript("(function() { var sl = window.pageXOffset || document.documentElement.scrollLeft; var sw = document.documentElement.scrollWidth; var pw = window.innerWidth; var maxScroll = sw - pw; if (maxScroll <= 0) return 0; return sl / maxScroll; })();") {
-                onCaptured(it.toDoubleOrNull() ?: 0.0)
-            }
-        } else {
-            webView.evaluateJavascript("(function() { var container = document.getElementById('chapters-container'); if (!container) return 0; var sections = [...container.children].filter(s => s.tagName === 'SECTION'); var activeSection = sections.find(s => { var r = s.getBoundingClientRect(); return r.top <= 100 && r.bottom > 100; }) || sections[0]; if (activeSection) { var rect = activeSection.getBoundingClientRect(); var prog = Math.abs(rect.top) / rect.height; return Math.min(Math.max(prog, 0), 1); } return 0; })();") {
-                onCaptured(it.toDoubleOrNull() ?: 0.0)
-            }
+    private fun captureCurrentElementIndex(onCaptured: (Int) -> Unit) {
+        val js = """
+            (function() {
+                var pw = window.innerWidth;
+                var el = null;
+                // Deep scan from top to find ACTUAL content element
+                for (var y = 100; y < 800; y += 20) {
+                    var found = document.elementFromPoint(pw / 2, y);
+                    if (found) {
+                        var target = found.closest('p, h1, h2, h3, h4, h5, h6, li, img');
+                        if (target && target.hasAttribute('data-idx')) {
+                            return parseInt(target.getAttribute('data-idx'));
+                        }
+                    }
+                }
+                return -1;
+            })();
+        """.trimIndent()
+        webView.evaluateJavascript(js) {
+            onCaptured(it.toIntOrNull() ?: -1)
         }
     }
 
@@ -274,27 +286,35 @@ class ReaderActivity : AppCompatActivity() {
             }
             override fun onPageFinished(view: WebView?, url: String?) { 
                 applyCurrentSettings()
+                injectIndexingScript()
                 
-                if (isPagedMode && pendingRelativeProgress >= 0) {
-                    val prog = pendingRelativeProgress
-                    pendingRelativeProgress = -1.0
+                if (isPagedMode && pendingElementIndex >= 0) {
+                    val idx = pendingElementIndex
+                    pendingElementIndex = -1
                     webView.evaluateJavascript("""
                         (function() {
-                            var retryCount = 0;
-                            function tryPagedJump() {
+                            var retry = 0;
+                            var lastWidth = 0;
+                            function syncIdx() {
+                                var target = document.querySelector('[data-idx="' + $idx + '"]');
                                 var sw = document.documentElement.scrollWidth;
                                 var pw = window.innerWidth;
-                                if ((sw > pw && sw > 0) || retryCount > 30) {
-                                    var maxScroll = sw - pw;
-                                    var targetX = Math.round((maxScroll * $prog) / pw) * pw;
-                                    window.scrollTo(targetX, 0);
+                                
+                                // WAIT for layout to stabilize (sw must be > pw and stable)
+                                if ((target && sw > pw && sw === lastWidth) || retry > 60) {
+                                    if (target) {
+                                        var rect = target.getBoundingClientRect();
+                                        var pageX = Math.floor((window.pageXOffset + rect.left) / pw) * pw;
+                                        window.scrollTo(pageX, 0);
+                                    }
                                     document.body.style.visibility = 'visible';
                                 } else {
-                                    retryCount++;
-                                    setTimeout(tryPagedJump, 50);
+                                    lastWidth = sw;
+                                    retry++;
+                                    setTimeout(syncIdx, 50);
                                 }
                             }
-                            tryPagedJump();
+                            syncIdx();
                         })();
                     """.trimIndent(), null)
                 } else if (isPagedMode) {
@@ -312,6 +332,18 @@ class ReaderActivity : AppCompatActivity() {
         }
     }
 
+    private fun injectIndexingScript() {
+        val js = """
+            (function() {
+                var items = document.querySelectorAll('p, h1, h2, h3, h4, h5, h6, li, img');
+                for (var i=0; i<items.length; i++) {
+                    items[i].setAttribute('data-idx', i);
+                }
+            })();
+        """.trimIndent()
+        webView.evaluateJavascript(js, null)
+    }
+
     private fun initPagedView() {
         val loader = chapterLoader ?: return
         val html = loader.loadChapterHtml(currentSpineIndex) ?: return
@@ -322,7 +354,7 @@ class ReaderActivity : AppCompatActivity() {
                 <style id="reader-style"></style>
                 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
             </head>
-            <body style="visibility: hidden; margin: 0; padding: 0;">
+            <body style="visibility: hidden; margin: 0 !important; padding: 0 !important;">
                 $html
             </body>
             </html>
@@ -353,21 +385,18 @@ class ReaderActivity : AppCompatActivity() {
                         });
                     }, { threshold: 0.1 });
                     
-                    // Frequent scroll tracker for section active state
                     window.addEventListener('scroll', function() {
-                        var container = document.getElementById('chapters-container');
-                        var sections = [...container.children].filter(s => s.tagName === 'SECTION');
+                        var sections = [...document.querySelectorAll('section')];
                         var active = sections.find(s => {
                             var r = s.getBoundingClientRect();
-                            return r.top <= 100 && r.bottom > 100;
+                            return r.top <= 150 && r.bottom > 150;
                         });
                         if (active) {
-                            var index = parseInt(active.getAttribute('data-index'));
-                            AndroidReader.onChapterEntered(index);
+                            AndroidReader.onChapterEntered(parseInt(active.getAttribute('data-index')));
                         }
                     });
 
-                    function appendChapter(index, html, progress) {
+                    function appendChapter(index, html, targetIdx) {
                         var container = document.getElementById('chapters-container');
                         if (document.getElementById('chapter-' + index)) return;
                         
@@ -376,11 +405,11 @@ class ReaderActivity : AppCompatActivity() {
                         section.setAttribute('data-index', index);
                         section.innerHTML = html;
                         
-                        var oldSentinel = document.getElementById('bottom-sentinel');
-                        if (oldSentinel) {
-                            observer.unobserve(oldSentinel);
-                            oldSentinel.remove();
-                        }
+                        var items = section.querySelectorAll('p, h1, h2, h3, h4, h5, h6, li, img');
+                        for (var i=0; i<items.length; i++) items[i].setAttribute('data-idx', i);
+                        
+                        var oldBot = document.getElementById('bottom-sentinel');
+                        if (oldBot) { observer.unobserve(oldBot); oldBot.remove(); }
                         
                         container.appendChild(section);
                         
@@ -391,10 +420,18 @@ class ReaderActivity : AppCompatActivity() {
                         container.appendChild(sentinel);
                         observer.observe(sentinel);
                         
-                        if (progress > 0) {
-                            setTimeout(function() {
-                                window.scrollTo(0, section.offsetTop + (section.offsetHeight * progress));
-                            }, 100);
+                        if (targetIdx >= 0) {
+                            var retry = 0;
+                            function syncIdxScroll() {
+                                var target = section.querySelector('[data-idx="' + targetIdx + '"]');
+                                if (target || retry > 40) {
+                                    if (target) window.scrollTo(0, target.offsetTop);
+                                } else {
+                                    retry++;
+                                    setTimeout(syncIdxScroll, 50);
+                                }
+                            }
+                            syncIdxScroll();
                         }
                     }
 
@@ -407,11 +444,11 @@ class ReaderActivity : AppCompatActivity() {
                         section.setAttribute('data-index', index);
                         section.innerHTML = html;
                         
-                        var oldSentinel = document.getElementById('top-sentinel');
-                        if (oldSentinel) {
-                            observer.unobserve(oldSentinel);
-                            oldSentinel.remove();
-                        }
+                        var items = section.querySelectorAll('p, h1, h2, h3, h4, h5, h6, li, img');
+                        for (var i=0; i<items.length; i++) items[i].setAttribute('data-idx', i);
+                        
+                        var oldTop = document.getElementById('top-sentinel');
+                        if (oldTop) { observer.unobserve(oldTop); oldTop.remove(); }
 
                         var oldHeight = container.scrollHeight;
                         container.insertBefore(section, container.firstChild);
@@ -434,19 +471,19 @@ class ReaderActivity : AppCompatActivity() {
         lastAppendedIndex = -1
         firstPrependedIndex = Int.MAX_VALUE
         isChapterLoading = false
-        val progressToUse = if (pendingRelativeProgress >= 0) pendingRelativeProgress else 0.0
-        pendingRelativeProgress = -1.0
+        val idxToUse = pendingElementIndex
+        pendingElementIndex = -1
         
         webView.loadDataWithBaseURL("epub://seamless/", html, "text/html", "UTF-8", null)
         
         webView.postDelayed({
-            loadAndAppendChapter(currentSpineIndex, progressToUse)
+            loadAndAppendChapter(currentSpineIndex, idxToUse)
             loadAndAppendChapter(currentSpineIndex + 1)
             loadAndPrependChapter(currentSpineIndex - 1)
         }, 500)
     }
 
-    private fun loadAndAppendChapter(index: Int, progress: Double = 0.0) {
+    private fun loadAndAppendChapter(index: Int, targetIdx: Int = -1) {
         val loader = chapterLoader ?: return
         if (index < 0 || index >= (epubBook?.spine?.size ?: 0) || index <= lastAppendedIndex) return
         
@@ -460,7 +497,7 @@ class ReaderActivity : AppCompatActivity() {
         lastAppendedIndex = index
         
         val escapedHtml = html.replace("`", "\\`").replace("${"$"}", "\\$")
-        webView.evaluateJavascript("appendChapter($index, `$escapedHtml`, $progress);") {
+        webView.evaluateJavascript("appendChapter($index, `$escapedHtml`, $targetIdx);") {
             isChapterLoading = false
         }
     }
@@ -584,7 +621,7 @@ class ReaderActivity : AppCompatActivity() {
 
     private fun prevPage() {
         if (!isPagedMode) return
-        webView.evaluateJavascript("(function() { var sl = window.pageXOffset || document.documentElement.scrollLeft; var pw = window.innerWidth; if (sl > 10) { window.scrollTo(sl - pw, 0); return 'ok'; } return 'prev'; })();") {
+        webView.evaluateJavascript("(function() { var sl = window.pageXOffset || document.documentElement.scrollLeft || document.body.scrollLeft; var pw = window.innerWidth; if (sl > 10) { window.scrollTo(sl - pw, 0); return 'ok'; } return 'prev'; })();") {
             if (it == "\"prev\"") loadPrevSpineItem()
         }
     }
