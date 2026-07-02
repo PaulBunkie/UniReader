@@ -165,7 +165,6 @@ class ReaderActivity : AppCompatActivity() {
             (function() {
                 var pw = window.innerWidth;
                 var el = null;
-                // Deep scan from top to find ACTUAL content element
                 for (var y = 100; y < 800; y += 20) {
                     var found = document.elementFromPoint(pw / 2, y);
                     if (found) {
@@ -279,6 +278,11 @@ class ReaderActivity : AppCompatActivity() {
         }, "AndroidReader")
 
         webView.webViewClient = object : WebViewClient() {
+            override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
+                // Блокируем все переходы по ссылкам
+                return true
+            }
+
             override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): WebResourceResponse? {
                 val url = request?.url?.toString() ?: return null
                 if (url.startsWith("epub://")) return serveEpubResource(url.replace("epub://", ""))
@@ -296,11 +300,10 @@ class ReaderActivity : AppCompatActivity() {
                             var retry = 0;
                             var lastWidth = 0;
                             function syncIdx() {
-                                var target = document.querySelector('[data-idx="' + $idx + '"]');
+                                var target = document.querySelector('[data-idx="$idx"]');
                                 var sw = document.documentElement.scrollWidth;
-                                var pw = window.innerWidth;
+                                var pw = Math.round(window.innerWidth);
                                 
-                                // WAIT for layout to stabilize (sw must be > pw and stable)
                                 if ((target && sw > pw && sw === lastWidth) || retry > 60) {
                                     if (target) {
                                         var rect = target.getBoundingClientRect();
@@ -534,7 +537,7 @@ class ReaderActivity : AppCompatActivity() {
 
     private fun executeJumpToLastPage() {
         if (isPagedMode) {
-            webView.evaluateJavascript("(function() { var sw = document.documentElement.scrollWidth; var pw = window.innerWidth; window.scrollTo(sw - pw, 0); document.body.style.visibility = 'visible'; })();") {
+            webView.evaluateJavascript("(function() { var sw = document.documentElement.scrollWidth; var pw = Math.round(window.innerWidth); window.scrollTo(sw - pw, 0); document.body.style.visibility = 'visible'; })();") {
                 shouldJumpToLastPage = false
             }
         } else {
@@ -616,14 +619,14 @@ class ReaderActivity : AppCompatActivity() {
 
     private fun nextPage() {
         if (!isPagedMode) return
-        webView.evaluateJavascript("(function() { var sw = document.documentElement.scrollWidth; var sl = window.pageXOffset || document.documentElement.scrollLeft; var pw = window.innerWidth; if (sl + pw + 10 < sw) { var nextPos = Math.round((sl + pw) / pw) * pw; window.scrollTo(nextPos, 0); return 'ok'; } return 'next'; })();") { 
+        webView.evaluateJavascript("(function() { var pw = Math.round(window.innerWidth); var sl = Math.round(window.pageXOffset || document.documentElement.scrollLeft); var sw = document.documentElement.scrollWidth; var page = Math.round(sl / pw); if (page * pw + pw + 10 < sw) { window.scrollTo(page * pw + pw, 0); return 'ok'; } return 'next'; })();") { 
             if (it == "\"next\"") loadNextSpineItem()
         }
     }
 
     private fun prevPage() {
         if (!isPagedMode) return
-        webView.evaluateJavascript("(function() { var sl = window.pageXOffset || document.documentElement.scrollLeft || document.body.scrollLeft; var pw = window.innerWidth; if (sl > 10) { var prevPos = Math.round((sl - pw) / pw) * pw; window.scrollTo(prevPos, 0); return 'ok'; } return 'prev'; })();") {
+        webView.evaluateJavascript("(function() { var pw = Math.round(window.innerWidth); var sl = Math.round(window.pageXOffset || document.documentElement.scrollLeft || document.body.scrollLeft); var page = Math.round(sl / pw); var prev = page * pw - pw; if (prev < 0) prev = 0; if (sl > 10) { window.scrollTo(prev, 0); return 'ok'; } return 'prev'; })();") {
             if (it == "\"prev\"") loadPrevSpineItem()
         }
     }

@@ -4,9 +4,9 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.widget.SeekBar
 import android.widget.TextView
 import androidx.fragment.app.Fragment
+import com.google.android.material.slider.Slider
 
 class ReaderSettingsFragment : Fragment() {
 
@@ -18,27 +18,25 @@ class ReaderSettingsFragment : Fragment() {
         super.onViewCreated(view, savedInstanceState)
         val activity = requireActivity() as ReaderActivity
 
-        val seekBar = view.findViewById<SeekBar>(R.id.seekBarFontSize)
+        val slider = view.findViewById<Slider>(R.id.sliderFontSize)
         val tvValue = view.findViewById<TextView>(R.id.tvFontSizeValue)
 
-        // SeekBar max=22, progress = fontSize - 10 (диапазон 10..32)
-        seekBar.progress = activity.settings.fontSize - 10
+        // Устанавливаем текущее значение
+        slider.value = activity.settings.fontSize.toFloat()
         tvValue.text = activity.settings.fontSize.toString()
 
-        seekBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
-                val newSize = progress + 10
-                tvValue.text = newSize.toString()
-            }
+        slider.addOnChangeListener { _, value, fromUser ->
+            val newSize = value.toInt()
+            tvValue.text = newSize.toString()
 
-            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
-
-            override fun onStopTrackingTouch(seekBar: SeekBar?) {
-                val newSize = (seekBar?.progress ?: 8) + 10
+            if (fromUser) {
+                // Применяем шрифт сразу при движении ползунка
                 activity.settings.fontSize = newSize
-                activity.settings.save(activity)
                 activity.applyCurrentSettings()
+                // Сохраняем в Preferences, но не при каждом пикселе — throttle не нужен,
+                // apply() асинхронный и лёгкий
+                activity.settings.save(activity)
             }
-        })
+        }
     }
 }
