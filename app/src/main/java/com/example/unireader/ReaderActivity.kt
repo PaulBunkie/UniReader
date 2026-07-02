@@ -54,6 +54,7 @@ class ReaderActivity : AppCompatActivity() {
     
     // High-precision Element Index
     private var pendingElementIndex = -1
+    private var pendingAnchor: String? = null
 
     lateinit var settings: ReaderSettings
     private lateinit var gestureDetector: GestureDetectorCompat
@@ -163,7 +164,7 @@ class ReaderActivity : AppCompatActivity() {
     private fun captureCurrentElementIndex(onCaptured: (Int) -> Unit) {
         val js = """
             (function() {
-                var pw = window.innerWidth;
+                var pw = document.documentElement.clientWidth || window.innerWidth;
                 var el = null;
                 for (var y = 100; y < 800; y += 20) {
                     var found = document.elementFromPoint(pw / 2, y);
@@ -251,6 +252,12 @@ class ReaderActivity : AppCompatActivity() {
         
         webView.addJavascriptInterface(object {
             @JavascriptInterface
+            fun onLinkClicked(url: String) {
+                runOnUiThread {
+                    handleInternalLink(url)
+                }
+            }
+            @JavascriptInterface
             fun onReachedBottom() {
                 runOnUiThread { 
                     if (!isPagedMode && !isChapterLoading) {
@@ -280,23 +287,7 @@ class ReaderActivity : AppCompatActivity() {
         webView.webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
                 val url = request?.url?.toString() ?: return true
-                if (url.contains("#")) {
-                    val anchor = url.substringAfterLast("#")
-                    view?.evaluateJavascript("""
-                        (function() {
-                            var el = document.getElementById('$anchor');
-                            if (el) {
-                                el.scrollIntoView();
-                                var pw = Math.round(window.innerWidth);
-                                window.scrollTo(Math.round(window.pageXOffset / pw) * pw, 0);
-                            }
-                        })();
-                    """.trimIndent(), null)
-                    // Переприменяем CSS после скролла к сноске
-                    view?.postDelayed({ applyCurrentSettings() }, 50)
-                    return true
-                }
-                // Всё остальное блокируем
+                handleInternalLink(url)
                 return true
             }
 
@@ -309,32 +300,41 @@ class ReaderActivity : AppCompatActivity() {
                 applyCurrentSettings()
                 injectIndexingScript()
                 
-                if (isPagedMode && pendingElementIndex >= 0) {
+                if (isPagedMode && (pendingAnchor != null || pendingElementIndex >= 0)) {
+                    val anchor = pendingAnchor
                     val idx = pendingElementIndex
+                    pendingAnchor = null
                     pendingElementIndex = -1
+                    
                     webView.evaluateJavascript("""
                         (function() {
                             var retry = 0;
                             var lastWidth = 0;
-                            function syncIdx() {
-                                var target = document.querySelector('[data-idx="$idx"]');
+                            function sync() {
+                                var target = null;
+                                if ('$anchor' !== 'null') {
+                                    target = document.getElementById('$anchor') || document.getElementsByName('$anchor')[0];
+                                } else if ($idx >= 0) {
+                                    target = document.querySelector('[data-idx="$idx"]');
+                                }
+                                
+                                var pw = document.documentElement.clientWidth || window.innerWidth;
                                 var sw = document.documentElement.scrollWidth;
-                                var pw = Math.round(window.innerWidth);
                                 
                                 if ((target && sw > pw && sw === lastWidth) || retry > 60) {
                                     if (target) {
                                         var rect = target.getBoundingClientRect();
-                                        var pageX = Math.floor((window.pageXOffset + rect.left) / pw) * pw;
-                                        window.scrollTo(pageX, 0);
+                                        var pageIndex = Math.floor((window.pageXOffset + rect.left + 2) / pw);
+                                        window.scrollTo(pageIndex * pw, 0);
                                     }
                                     document.body.style.visibility = 'visible';
                                 } else {
                                     lastWidth = sw;
                                     retry++;
-                                    setTimeout(syncIdx, 50);
+                                    setTimeout(sync, 50);
                                 }
                             }
-                            syncIdx();
+                            sync();
                         })();
                     """.trimIndent(), null)
                 } else if (isPagedMode) {
@@ -359,9 +359,84 @@ class ReaderActivity : AppCompatActivity() {
                 for (var i=0; i<items.length; i++) {
                     items[i].setAttribute('data-idx', i);
                 }
+                
+                document.body.addEventListener('click', function(e) {
+                    var a = e.target.closest('a');
+                    if (a && a.getAttribute('href')) {
+                        var href = a.getAttribute('href');
+                        if (href.startsWith('#') || href.indexOf('://') === -1 || href.startsWith('epub://')) {
+                            e.preventDefault();
+                            var absolute = a.href; // Browser resolves relative to epub://...
+                            AndroidReader.onLinkClicked(absolute);
+                        }
+                    }
+                }, true);
             })();
         """.trimIndent()
         webView.evaluateJavascript(js, null)
+    }
+
+    private fun handleInternalLink(url: String) {
+        if (!url.startsWith("epub://") && !url.contains("#")) return
+
+        val cleanPath = url.replace("epub://", "")
+        val pathWithoutFragment = cleanPath.substringBefore("#")
+        val fragment = if (cleanPath.contains("#")) cleanPath.substringAfter("#") else null
+
+        val book = epubBook ?: return
+        val opfDir = File(book.opfPath).parent ?: ""
+        
+        var targetIndex = -1
+        for (i in book.spine.indices) {
+            val itemHref = book.spine[i].href
+            val fullHref = if (opfDir.isEmpty()) itemHref else "$opfDir/$itemHref".replace("//", "/")
+            if (fullHref == pathWithoutFragment || (pathWithoutFragment.isEmpty() && i == currentSpineIndex)) {
+                targetIndex = i
+                break
+            }
+        }
+
+        if (targetIndex != -1 && targetIndex != currentSpineIndex) {
+            pendingAnchor = fragment
+            loadSpineItem(targetIndex)
+        } else if (fragment != null) {
+            if (isPagedMode) {
+                webView.evaluateJavascript("""
+                    (function() {
+                        document.body.style.visibility = 'hidden';
+                        var retry = 0;
+                        var lastWidth = 0;
+                        function sync() {
+                            var target = document.getElementById('$fragment') || document.getElementsByName('$fragment')[0];
+                            var pw = document.documentElement.clientWidth || window.innerWidth;
+                            var sw = document.documentElement.scrollWidth;
+                            if ((target && sw > pw && sw === lastWidth) || retry > 60) {
+                                if (target) {
+                                    var rect = target.getBoundingClientRect();
+                                    var pageIndex = Math.floor((window.pageXOffset + rect.left + 2) / pw);
+                                    window.scrollTo(pageIndex * pw, 0);
+                                }
+                                document.body.style.visibility = 'visible';
+                            } else {
+                                lastWidth = sw;
+                                retry++;
+                                setTimeout(sync, 50);
+                            }
+                        }
+                        sync();
+                    })();
+                """.trimIndent(), null)
+            } else {
+                webView.evaluateJavascript("""
+                    (function() {
+                        var target = document.getElementById('$fragment') || document.getElementsByName('$fragment')[0];
+                        if (target) {
+                            window.scrollTo(0, window.pageYOffset + target.getBoundingClientRect().top);
+                        }
+                    })();
+                """.trimIndent(), null)
+            }
+        }
     }
 
     private fun initPagedView() {
@@ -374,7 +449,7 @@ class ReaderActivity : AppCompatActivity() {
                 <style id="reader-style"></style>
                 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
             </head>
-            <body style="visibility: hidden; margin: 0 !important; padding: 0 !important;">
+            <body data-mode="paged" style="visibility: hidden; margin: 0 !important; padding: 0 !important;">
                 ${content.html}
             </body>
             </html>
@@ -612,7 +687,8 @@ class ReaderActivity : AppCompatActivity() {
             html { margin: 0; padding: 0; height: 100vh; width: 100vw; overflow: hidden; }
             body { 
                 margin: 0 !important; padding: 0 !important; height: 100vh; width: 100vw; 
-                column-count: 1; column-gap: 0; -webkit-column-count: 1; -webkit-column-gap: 0;
+                -webkit-column-width: 100vw; -webkit-column-gap: 0;
+                column-width: 100vw; column-gap: 0;
                 display: block; position: relative; box-sizing: border-box; line-height: 1.6;
                 font-family: sans-serif; font-size: ${settings.fontSize}px;
             }
