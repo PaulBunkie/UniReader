@@ -366,16 +366,16 @@ class ReaderActivity : AppCompatActivity() {
 
     private fun initPagedView() {
         val loader = chapterLoader ?: return
-        val html = loader.loadChapterHtml(currentSpineIndex) ?: return
+        val content = loader.loadChapterHtml(currentSpineIndex) ?: return
         val wrappedHtml = """
             <!DOCTYPE html>
-            <html>
+            <html ${if (content.lang != null) "lang=\"${content.lang}\"" else ""}>
             <head>
                 <style id="reader-style"></style>
                 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
             </head>
             <body style="visibility: hidden; margin: 0 !important; padding: 0 !important;">
-                $html
+                ${content.html}
             </body>
             </html>
         """.trimIndent()
@@ -416,13 +416,14 @@ class ReaderActivity : AppCompatActivity() {
                         }
                     });
 
-                    function appendChapter(index, html, targetIdx) {
+                    function appendChapter(index, html, targetIdx, lang) {
                         var container = document.getElementById('chapters-container');
                         if (document.getElementById('chapter-' + index)) return;
                         
                         var section = document.createElement('section');
                         section.id = 'chapter-' + index;
                         section.setAttribute('data-index', index);
+                        if (lang) section.setAttribute('lang', lang);
                         section.innerHTML = html;
                         
                         var items = section.querySelectorAll('p, h1, h2, h3, h4, h5, h6, li, img');
@@ -455,13 +456,14 @@ class ReaderActivity : AppCompatActivity() {
                         }
                     }
 
-                    function prependChapter(index, html) {
+                    function prependChapter(index, html, lang) {
                         var container = document.getElementById('chapters-container');
                         if (document.getElementById('chapter-' + index)) return;
                         
                         var section = document.createElement('section');
                         section.id = 'chapter-' + index;
                         section.setAttribute('data-index', index);
+                        if (lang) section.setAttribute('lang', lang);
                         section.innerHTML = html;
                         
                         var items = section.querySelectorAll('p, h1, h2, h3, h4, h5, h6, li, img');
@@ -508,7 +510,7 @@ class ReaderActivity : AppCompatActivity() {
         if (index < 0 || index >= (epubBook?.spine?.size ?: 0) || index <= lastAppendedIndex) return
         
         isChapterLoading = true
-        val html = loader.loadChapterHtml(index) ?: run {
+        val content = loader.loadChapterHtml(index) ?: run {
             isChapterLoading = false
             return
         }
@@ -516,8 +518,9 @@ class ReaderActivity : AppCompatActivity() {
         if (lastAppendedIndex == -1) firstPrependedIndex = index
         lastAppendedIndex = index
         
-        val escapedHtml = html.replace("`", "\\`").replace("${"$"}", "\\$")
-        webView.evaluateJavascript("appendChapter($index, `$escapedHtml`, $targetIdx);") {
+        val escapedHtml = content.html.replace("`", "\\`").replace("${"$"}", "\\$")
+        val langArg = if (content.lang != null) "'${content.lang}'" else "null"
+        webView.evaluateJavascript("appendChapter($index, `$escapedHtml`, $targetIdx, $langArg);") {
             isChapterLoading = false
         }
     }
@@ -527,14 +530,15 @@ class ReaderActivity : AppCompatActivity() {
         if (index < 0 || index >= (epubBook?.spine?.size ?: 0) || index >= firstPrependedIndex) return
         
         isChapterLoading = true
-        val html = loader.loadChapterHtml(index) ?: run {
+        val content = loader.loadChapterHtml(index) ?: run {
             isChapterLoading = false
             return
         }
         
         firstPrependedIndex = index
-        val escapedHtml = html.replace("`", "\\`").replace("${"$"}", "\\$")
-        webView.evaluateJavascript("prependChapter($index, `$escapedHtml`);") {
+        val escapedHtml = content.html.replace("`", "\\`").replace("${"$"}", "\\$")
+        val langArg = if (content.lang != null) "'${content.lang}'" else "null"
+        webView.evaluateJavascript("prependChapter($index, `$escapedHtml`, $langArg);") {
             isChapterLoading = false
         }
     }
@@ -611,10 +615,9 @@ class ReaderActivity : AppCompatActivity() {
                 column-count: 1; column-gap: 0; -webkit-column-count: 1; -webkit-column-gap: 0;
                 display: block; position: relative; box-sizing: border-box; line-height: 1.6;
                 font-family: sans-serif; font-size: ${settings.fontSize}px;
-                word-break: break-word; overflow-wrap: break-word;
             }
             p, div, h1, h2, h3, h4, h5, h6 { margin: 0 6vw 1em 6vw; text-align: justify; hyphens: auto; }
-            * { max-width: 100vw; box-sizing: border-box; word-wrap: break-word; }
+            * { max-width: 100vw; box-sizing: border-box; }
             img { display: block; max-width: 90%; max-height: 80%; margin: 10px auto; object-fit: contain; }
         """.trimIndent().replace("\n", "")
         webView.evaluateJavascript("var style = document.getElementById('reader-style') || document.createElement('style'); style.id = 'reader-style'; style.innerHTML = '$css'; if (!style.parentNode) document.head.appendChild(style); var meta = document.querySelector('meta[name=\"viewport\"]') || document.createElement('meta'); meta.name = 'viewport'; meta.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no'; if (!meta.parentNode) document.head.appendChild(meta);", null)
@@ -627,7 +630,6 @@ class ReaderActivity : AppCompatActivity() {
                 margin: 0; padding: 24px; line-height: 1.6; font-family: sans-serif; 
                 font-size: ${settings.fontSize}px; visibility: visible; 
                 display: block !important;
-                word-break: break-word; overflow-wrap: break-word;
             } 
             p, div, h1, h2, h3, h4, h5, h6 { text-align: justify; hyphens: auto; margin-top: 0; margin-bottom: 1em; }
         """.trimIndent().replace("\n", "")

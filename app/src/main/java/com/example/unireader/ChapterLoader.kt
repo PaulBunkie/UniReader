@@ -4,9 +4,11 @@ import android.content.Context
 import java.io.File
 import java.util.zip.ZipInputStream
 
+data class ChapterContent(val html: String, val lang: String?)
+
 class ChapterLoader(private val context: Context, private val book: EpubBook) {
 
-    fun loadChapterHtml(index: Int): String? {
+    fun loadChapterHtml(index: Int): ChapterContent? {
         if (index < 0 || index >= book.spine.size) return null
         val item = book.spine[index]
         val opfDir = File(book.opfPath).parent ?: ""
@@ -32,7 +34,10 @@ class ChapterLoader(private val context: Context, private val book: EpubBook) {
         }
     }
 
-    private fun sanitizeHtml(html: String, opfDir: String): String {
+    private fun sanitizeHtml(html: String, opfDir: String): ChapterContent {
+        val htmlTagRegex = Regex("<html[^>]*lang=[\"']([^\"']+)[\"'][^>]*>", RegexOption.IGNORE_CASE)
+        val lang = htmlTagRegex.find(html)?.groupValues?.get(1)
+
         val bodyRegex = Regex("<body[^>]*>(.*)</body>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
         val bodyMatch = bodyRegex.find(html)
         var content = bodyMatch?.groupValues?.get(1) ?: html
@@ -51,7 +56,7 @@ class ChapterLoader(private val context: Context, private val book: EpubBook) {
             "href=\"epub://$absolutePath\""
         }
 
-        return content
+        return ChapterContent(content, lang)
     }
     
     private fun resolveRelativePath(base: String, relative: String): String {
