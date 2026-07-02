@@ -279,7 +279,24 @@ class ReaderActivity : AppCompatActivity() {
 
         webView.webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
-                // Блокируем все переходы по ссылкам
+                val url = request?.url?.toString() ?: return true
+                if (url.contains("#")) {
+                    val anchor = url.substringAfterLast("#")
+                    view?.evaluateJavascript("""
+                        (function() {
+                            var el = document.getElementById('$anchor');
+                            if (el) {
+                                el.scrollIntoView();
+                                var pw = Math.round(window.innerWidth);
+                                window.scrollTo(Math.round(window.pageXOffset / pw) * pw, 0);
+                            }
+                        })();
+                    """.trimIndent(), null)
+                    // Переприменяем CSS после скролла к сноске
+                    view?.postDelayed({ applyCurrentSettings() }, 50)
+                    return true
+                }
+                // Всё остальное блокируем
                 return true
             }
 
