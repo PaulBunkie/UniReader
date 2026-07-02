@@ -32,6 +32,7 @@ class ReaderSettingsSheet : BottomSheetDialogFragment() {
             override fun getItemCount(): Int = 3
             override fun createFragment(position: Int) = when (position) {
                 0 -> GeneralSettingsFragment()
+                1 -> ReaderSettingsFragment()
                 else -> PlaceholderFragment()
             }
         }

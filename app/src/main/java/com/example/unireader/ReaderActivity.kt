@@ -591,6 +591,7 @@ class ReaderActivity : AppCompatActivity() {
                 column-count: 1; column-gap: 0; -webkit-column-count: 1; -webkit-column-gap: 0;
                 display: block; position: relative; box-sizing: border-box; line-height: 1.6;
                 font-family: sans-serif; font-size: ${settings.fontSize}px;
+                word-break: break-word; overflow-wrap: break-word;
             }
             p, div, h1, h2, h3, h4, h5, h6 { margin: 0 6vw 1em 6vw; text-align: justify; hyphens: auto; }
             * { max-width: 100vw; box-sizing: border-box; word-wrap: break-word; }
@@ -606,6 +607,7 @@ class ReaderActivity : AppCompatActivity() {
                 margin: 0; padding: 24px; line-height: 1.6; font-family: sans-serif; 
                 font-size: ${settings.fontSize}px; visibility: visible; 
                 display: block !important;
+                word-break: break-word; overflow-wrap: break-word;
             } 
             p, div, h1, h2, h3, h4, h5, h6 { text-align: justify; hyphens: auto; margin-top: 0; margin-bottom: 1em; }
         """.trimIndent().replace("\n", "")
@@ -614,14 +616,14 @@ class ReaderActivity : AppCompatActivity() {
 
     private fun nextPage() {
         if (!isPagedMode) return
-        webView.evaluateJavascript("(function() { var sw = document.documentElement.scrollWidth; var sl = window.pageXOffset || document.documentElement.scrollLeft; var pw = window.innerWidth; if (sl + pw + 10 < sw) { window.scrollTo(sl + pw, 0); return 'ok'; } return 'next'; })();") { 
+        webView.evaluateJavascript("(function() { var sw = document.documentElement.scrollWidth; var sl = window.pageXOffset || document.documentElement.scrollLeft; var pw = window.innerWidth; if (sl + pw + 10 < sw) { var nextPos = Math.round((sl + pw) / pw) * pw; window.scrollTo(nextPos, 0); return 'ok'; } return 'next'; })();") { 
             if (it == "\"next\"") loadNextSpineItem()
         }
     }
 
     private fun prevPage() {
         if (!isPagedMode) return
-        webView.evaluateJavascript("(function() { var sl = window.pageXOffset || document.documentElement.scrollLeft || document.body.scrollLeft; var pw = window.innerWidth; if (sl > 10) { window.scrollTo(sl - pw, 0); return 'ok'; } return 'prev'; })();") {
+        webView.evaluateJavascript("(function() { var sl = window.pageXOffset || document.documentElement.scrollLeft || document.body.scrollLeft; var pw = window.innerWidth; if (sl > 10) { var prevPos = Math.round((sl - pw) / pw) * pw; window.scrollTo(prevPos, 0); return 'ok'; } return 'prev'; })();") {
             if (it == "\"prev\"") loadPrevSpineItem()
         }
     }
