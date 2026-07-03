@@ -300,6 +300,22 @@ class ReaderActivity : AppCompatActivity() {
                 applyCurrentSettings()
                 injectIndexingScript()
                 
+                if (isPagedMode) {
+                    webView.evaluateJavascript("""
+                        (function() {
+                            var pw = window.innerWidth;
+                            // Если это первая глава и мы в самом начале - прыгаем через буферную страницу
+                            if ($currentSpineIndex === 0 && window.pageXOffset < 10 && '${pendingAnchor ?: ""}' === '' && $pendingElementIndex < 0) {
+                                window.scrollTo(pw, 0);
+                            }
+                            
+                            setTimeout(function() {
+                                document.body.style.setProperty('visibility', 'visible', 'important');
+                            }, 100);
+                        })();
+                    """.trimIndent(), null)
+                }
+                
                 if (isPagedMode && (pendingAnchor != null || pendingElementIndex >= 0)) {
                     val anchor = pendingAnchor
                     val idx = pendingElementIndex
@@ -318,13 +334,14 @@ class ReaderActivity : AppCompatActivity() {
                                     target = document.querySelector('[data-idx="$idx"]');
                                 }
                                 
-                                var pw = document.documentElement.clientWidth || window.innerWidth;
+                                var pw = window.innerWidth;
                                 var sw = document.documentElement.scrollWidth;
                                 
                                 if ((target && sw > pw && sw === lastWidth) || retry > 60) {
                                     if (target) {
                                         var rect = target.getBoundingClientRect();
-                                        var pageIndex = Math.floor((window.pageXOffset + rect.left + 2) / pw);
+                                        // Точный расчет страницы элемента
+                                        var pageIndex = Math.round((window.pageXOffset + rect.left) / pw);
                                         window.scrollTo(pageIndex * pw, 0);
                                     }
                                     document.body.style.visibility = 'visible';
@@ -442,6 +459,12 @@ class ReaderActivity : AppCompatActivity() {
     private fun initPagedView() {
         val loader = chapterLoader ?: return
         val content = loader.loadChapterHtml(currentSpineIndex) ?: return
+        
+        // Вставляем пустую страницу ТОЛЬКО в начало самой первой главы книги
+        val bufferPage = if (currentSpineIndex == 0) {
+            "<div style=\"width: 100vw; height: 100vh; break-after: column; -webkit-column-break-after: column;\"></div>"
+        } else ""
+        
         val wrappedHtml = """
             <!DOCTYPE html>
             <html ${if (content.lang != null) "lang=\"${content.lang}\"" else ""}>
@@ -449,7 +472,8 @@ class ReaderActivity : AppCompatActivity() {
                 <style id="reader-style"></style>
                 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
             </head>
-            <body data-mode="paged" style="visibility: hidden; margin: 0 !important; padding: 0 !important;">
+            <body data-mode="paged" style="visibility: hidden !important; margin: 0 !important; padding: 0 !important; background-color: transparent;">
+                $bufferPage
                 ${content.html}
             </body>
             </html>
@@ -633,7 +657,15 @@ class ReaderActivity : AppCompatActivity() {
 
     private fun executeJumpToLastPage() {
         if (isPagedMode) {
-            webView.evaluateJavascript("(function() { var sw = document.documentElement.scrollWidth; var pw = Math.round(window.innerWidth); window.scrollTo(sw - pw, 0); document.body.style.visibility = 'visible'; })();") {
+            webView.evaluateJavascript("""
+                (function() { 
+                    var sw = document.documentElement.scrollWidth; 
+                    var pw = window.innerWidth; 
+                    var lastPage = Math.floor((sw - 1) / pw);
+                    window.scrollTo(lastPage * pw, 0); 
+                    document.body.style.visibility = 'visible'; 
+                })();
+            """.trimIndent()) {
                 shouldJumpToLastPage = false
             }
         } else {
@@ -684,19 +716,39 @@ class ReaderActivity : AppCompatActivity() {
         if (widthPx <= 0 || heightPx <= 0) return
         
         val css = """
-            html { margin: 0; padding: 0; height: 100vh; width: 100vw; overflow: hidden; }
-            body { 
-                margin: 0 !important; padding: 0 !important; height: 100vh; width: 100vw; 
-                -webkit-column-width: 100vw; -webkit-column-gap: 0;
-                column-width: 100vw; column-gap: 0;
-                display: block; position: relative; box-sizing: border-box; line-height: 1.6;
-                font-family: sans-serif; font-size: ${settings.fontSize}px;
+            html { 
+                margin: 0; padding: 0; height: 100vh; width: 100vw; 
+                overflow-x: auto; overflow-y: hidden; 
+                scroll-snap-type: x mandatory; 
+                -webkit-overflow-scrolling: touch;
+                background-color: transparent;
             }
-            p, div, h1, h2, h3, h4, h5, h6 { margin: 0 6vw 1em 6vw; text-align: justify; hyphens: auto; }
-            * { max-width: 100vw; box-sizing: border-box; }
-            img { display: block; max-width: 90%; max-height: 80%; margin: 10px auto; object-fit: contain; }
+            body { 
+                margin: 0 !important; padding: 0 !important; 
+                height: 100vh; width: auto !important;
+                display: block; position: relative;
+                -webkit-column-width: 100vw !important; -webkit-column-gap: 0 !important;
+                column-width: 100vw !important; column-gap: 0 !important;
+                -webkit-column-fill: auto; column-fill: auto;
+                line-height: 1.6; font-family: sans-serif; font-size: ${settings.fontSize}px;
+                box-sizing: border-box;
+            }
+            /* Каждая страница - это точка прилипания */
+            section, div, p, h1, h2, h3, h4, h5, h6 { 
+                scroll-snap-align: start; 
+                scroll-snap-stop: always;
+            }
+            p, div, h1, h2, h3, h4, h5, h6 { 
+                margin: 0 !important;
+                padding: 0 6vw 1.2em 6vw !important; 
+                text-align: justify; hyphens: auto; 
+                word-wrap: break-word;
+                box-sizing: border-box;
+            }
+            * { max-width: 100vw !important; box-sizing: border-box !important; }
+            img { display: block; max-width: 88vw !important; max-height: 80vh !important; margin: 10px auto !important; object-fit: contain; }
         """.trimIndent().replace("\n", "")
-        webView.evaluateJavascript("var style = document.getElementById('reader-style') || document.createElement('style'); style.id = 'reader-style'; style.innerHTML = '$css'; if (!style.parentNode) document.head.appendChild(style); var meta = document.querySelector('meta[name=\"viewport\"]') || document.createElement('meta'); meta.name = 'viewport'; meta.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no'; if (!meta.parentNode) document.head.appendChild(meta);", null)
+        webView.evaluateJavascript("var style = document.getElementById('reader-style') || document.createElement('style'); style.id = 'reader-style'; style.innerHTML = '$css'; if (!style.parentNode) document.head.appendChild(style);", null)
     }
 
     private fun injectScrollCss() {
@@ -714,14 +766,46 @@ class ReaderActivity : AppCompatActivity() {
 
     private fun nextPage() {
         if (!isPagedMode) return
-        webView.evaluateJavascript("(function() { var pw = Math.round(window.innerWidth); var sl = Math.round(window.pageXOffset || document.documentElement.scrollLeft); var sw = document.documentElement.scrollWidth; var page = Math.round(sl / pw); if (page * pw + pw + 10 < sw) { window.scrollTo(page * pw + pw, 0); return 'ok'; } return 'next'; })();") { 
+        webView.evaluateJavascript("""
+            (function() { 
+                var pw = window.innerWidth;
+                var sl = window.pageXOffset || document.documentElement.scrollLeft;
+                var sw = document.documentElement.scrollWidth;
+                var currentPage = Math.round(sl / pw);
+                var nextScroll = (currentPage + 1) * pw;
+                
+                if (nextScroll + 10 < sw) { 
+                    // Используем scrollTo с прицелом на Scroll Snap
+                    window.scrollTo({ left: nextScroll, behavior: 'auto' }); 
+                    return 'ok'; 
+                } 
+                return 'next'; 
+            })();
+        """.trimIndent()) { 
             if (it == "\"next\"") loadNextSpineItem()
         }
     }
 
     private fun prevPage() {
         if (!isPagedMode) return
-        webView.evaluateJavascript("(function() { var pw = Math.round(window.innerWidth); var sl = Math.round(window.pageXOffset || document.documentElement.scrollLeft || document.body.scrollLeft); var page = Math.round(sl / pw); var prev = page * pw - pw; if (prev < 0) prev = 0; if (sl > 10) { window.scrollTo(prev, 0); return 'ok'; } return 'prev'; })();") {
+        webView.evaluateJavascript("""
+            (function() { 
+                var pw = window.innerWidth;
+                var sl = window.pageXOffset || document.documentElement.scrollLeft;
+                var currentPage = Math.round(sl / pw);
+                
+                // Если мы в первой главе и на первой странице текста (после буфера) - идем назад в пустоту нельзя
+                if ($currentSpineIndex === 0 && currentPage <= 1) {
+                    return 'prev';
+                }
+                
+                if (currentPage > 0) { 
+                    window.scrollTo({ left: (currentPage - 1) * pw, behavior: 'auto' });
+                    return 'ok'; 
+                } 
+                return 'prev'; 
+            })();
+        """.trimIndent()) {
             if (it == "\"prev\"") loadPrevSpineItem()
         }
     }
