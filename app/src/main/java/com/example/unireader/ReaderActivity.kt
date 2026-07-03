@@ -303,12 +303,6 @@ class ReaderActivity : AppCompatActivity() {
                 if (isPagedMode) {
                     webView.evaluateJavascript("""
                         (function() {
-                            var pw = window.innerWidth;
-                            // Если это первая глава и мы в самом начале - прыгаем через буферную страницу
-                            if ($currentSpineIndex === 0 && window.pageXOffset < 10 && '${pendingAnchor ?: ""}' === '' && $pendingElementIndex < 0) {
-                                window.scrollTo(pw, 0);
-                            }
-                            
                             setTimeout(function() {
                                 document.body.style.setProperty('visibility', 'visible', 'important');
                             }, 100);
@@ -460,11 +454,6 @@ class ReaderActivity : AppCompatActivity() {
         val loader = chapterLoader ?: return
         val content = loader.loadChapterHtml(currentSpineIndex) ?: return
         
-        // Вставляем пустую страницу ТОЛЬКО в начало самой первой главы книги
-        val bufferPage = if (currentSpineIndex == 0) {
-            "<div style=\"width: 100vw; height: 100vh; break-after: column; -webkit-column-break-after: column;\"></div>"
-        } else ""
-        
         val wrappedHtml = """
             <!DOCTYPE html>
             <html ${if (content.lang != null) "lang=\"${content.lang}\"" else ""}>
@@ -473,7 +462,6 @@ class ReaderActivity : AppCompatActivity() {
                 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
             </head>
             <body data-mode="paged" style="visibility: hidden !important; margin: 0 !important; padding: 0 !important; background-color: transparent;">
-                $bufferPage
                 ${content.html}
             </body>
             </html>
@@ -715,17 +703,20 @@ class ReaderActivity : AppCompatActivity() {
         val heightPx = webView.height
         if (widthPx <= 0 || heightPx <= 0) return
         
+        // Отключаем Scroll Snap ТОЛЬКО для первой страницы первой главы
+        val snapType = if (currentSpineIndex == 0) "none" else "x mandatory"
+
         val css = """
             html { 
                 margin: 0; padding: 0; height: 100vh; width: 100vw; 
                 overflow-x: auto; overflow-y: hidden; 
-                scroll-snap-type: x mandatory; 
+                scroll-snap-type: $snapType; 
                 -webkit-overflow-scrolling: touch;
                 background-color: transparent;
             }
             body { 
                 margin: 0 !important; padding: 0 !important; 
-                height: 100vh; width: auto !important;
+                height: 100vh; width: 100vw;
                 display: block; position: relative;
                 -webkit-column-width: 100vw !important; -webkit-column-gap: 0 !important;
                 column-width: 100vw !important; column-gap: 0 !important;
@@ -793,11 +784,6 @@ class ReaderActivity : AppCompatActivity() {
                 var pw = window.innerWidth;
                 var sl = window.pageXOffset || document.documentElement.scrollLeft;
                 var currentPage = Math.round(sl / pw);
-                
-                // Если мы в первой главе и на первой странице текста (после буфера) - идем назад в пустоту нельзя
-                if ($currentSpineIndex === 0 && currentPage <= 1) {
-                    return 'prev';
-                }
                 
                 if (currentPage > 0) { 
                     window.scrollTo({ left: (currentPage - 1) * pw, behavior: 'auto' });
