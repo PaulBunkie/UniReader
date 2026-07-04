@@ -777,15 +777,18 @@ class ReaderActivity : AppCompatActivity() {
                 var currentPage = Math.round(sl / pw);
                 var nextScroll = (currentPage + 1) * pw;
                 
-                if (nextScroll + 10 < sw) { 
-                    // Используем scrollTo с прицелом на Scroll Snap
+                // Если следующая страница начинается слишком близко к концу (менее чем пол-экрана запаса),
+                // значит пора переходить к следующей главе. Это решает проблему "математической стены".
+                if (nextScroll + (pw / 2) < sw) { 
                     window.scrollTo({ left: nextScroll, behavior: 'auto' }); 
                     return 'ok'; 
                 } 
                 return 'next'; 
             })();
         """.trimIndent()) { 
-            if (it == "\"next\"") loadNextSpineItem()
+            if (it == "\"next\"") {
+                loadNextSpineItem()
+            }
         }
     }
 
