@@ -132,6 +132,14 @@ class ReaderActivity : AppCompatActivity() {
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
         return when (item.itemId) {
             android.R.id.home -> { finish(); true }
+            R.id.action_toc -> {
+                epubBook?.let { book ->
+                    TOCSheet(book.toc) { href ->
+                        handleInternalLink("epub://$href")
+                    }.show(supportFragmentManager, "toc")
+                }
+                true
+            }
             R.id.action_settings -> {
                 ReaderSettingsSheet().show(supportFragmentManager, "settings")
                 true
@@ -398,22 +406,35 @@ class ReaderActivity : AppCompatActivity() {
 
     private fun handleInternalLink(url: String) {
         shouldJumpToLastPage = false
-        if (!url.startsWith("epub://") && !url.contains("#")) return
+        if (!url.startsWith("epub://") && !url.contains("#") && !url.endsWith(".xhtml") && !url.endsWith(".html")) return
 
-        val cleanPath = url.replace("epub://", "")
-        val pathWithoutFragment = cleanPath.substringBefore("#")
+        val cleanPath = url.replace("epub://", "").substringBefore("?")
+        val pathWithoutFragment = cleanPath.substringBefore("#").replace("\\", "/")
         val fragment = if (cleanPath.contains("#")) cleanPath.substringAfter("#") else null
 
         val book = epubBook ?: return
         val opfDir = File(book.opfPath).parent ?: ""
         
         var targetIndex = -1
+        
+        // 1. Прямое совпадение
         for (i in book.spine.indices) {
             val itemHref = book.spine[i].href
-            val fullHref = if (opfDir.isEmpty()) itemHref else "$opfDir/$itemHref".replace("//", "/")
-            if (fullHref == pathWithoutFragment || (pathWithoutFragment.isEmpty() && i == currentSpineIndex)) {
+            val fullHref = if (opfDir.isEmpty()) itemHref else "$opfDir/$itemHref".replace("//", "/").replace("\\", "/")
+            if (fullHref.equals(pathWithoutFragment, ignoreCase = true)) {
                 targetIndex = i
                 break
+            }
+        }
+
+        // 2. Поиск по имени файла (если пути в TOC и OPF расходятся)
+        if (targetIndex == -1) {
+            val fileName = pathWithoutFragment.substringAfterLast("/")
+            for (i in book.spine.indices) {
+                if (book.spine[i].href.substringAfterLast("/").equals(fileName, ignoreCase = true)) {
+                    targetIndex = i
+                    break
+                }
             }
         }
 
