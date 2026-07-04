@@ -32,5 +32,185 @@
             android:textSize="14sp"
             android:textStyle="bold" />
 
+        <!-- Screen Margins Header -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:text="Screen Margins (dp)"
+            android:textColor="#333333"
+            android:textSize="14sp"
+            android:textStyle="bold" />
+
+        <!-- Row 1: Left & Right -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginTop="8dp"
+            android:baselineAligned="false">
+
+            <!-- Left Margin -->
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical"
+                android:paddingEnd="8dp">
+                <RelativeLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Left"
+                        android:textColor="#666666"
+                        android:textSize="12sp" />
+                    <TextView
+                        android:id="@+id/tvPaddingLeftValue"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_alignParentEnd="true"
+                        android:text="10"
+                        android:textColor="#666666"
+                        android:textSize="12sp" />
+                </RelativeLayout>
+                <com.google.android.material.slider.Slider
+                    android:id="@+id/sliderPaddingLeft"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:stepSize="1"
+                    android:valueFrom="0"
+                    android:valueTo="50"
+                    app:labelBehavior="gone"
+                    app:trackColorActive="?attr/colorAccent"
+                    app:thumbColor="?attr/colorAccent"
+                    android:layout_marginTop="-8dp" />
+            </LinearLayout>
+
+            <!-- Right Margin -->
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical"
+                android:paddingStart="8dp">
+                <RelativeLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Right"
+                        android:textColor="#666666"
+                        android:textSize="12sp" />
+                    <TextView
+                        android:id="@+id/tvPaddingRightValue"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_alignParentEnd="true"
+                        android:text="10"
+                        android:textColor="#666666"
+                        android:textSize="12sp" />
+                </RelativeLayout>
+                <com.google.android.material.slider.Slider
+                    android:id="@+id/sliderPaddingRight"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:stepSize="1"
+                    android:valueFrom="0"
+                    android:valueTo="50"
+                    app:labelBehavior="gone"
+                    app:trackColorActive="?attr/colorAccent"
+                    app:thumbColor="?attr/colorAccent"
+                    android:layout_marginTop="-8dp" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- Row 2: Top & Bottom -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginTop="4dp"
+            android:baselineAligned="false">
+
+            <!-- Top Margin -->
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical"
+                android:paddingEnd="8dp">
+                <RelativeLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Top"
+                        android:textColor="#666666"
+                        android:textSize="12sp" />
+                    <TextView
+                        android:id="@+id/tvPaddingTopValue"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_alignParentEnd="true"
+                        android:text="0"
+                        android:textColor="#666666"
+                        android:textSize="12sp" />
+                </RelativeLayout>
+                <com.google.android.material.slider.Slider
+                    android:id="@+id/sliderPaddingTop"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:stepSize="1"
+                    android:valueFrom="0"
+                    android:valueTo="50"
+                    app:labelBehavior="gone"
+                    app:trackColorActive="?attr/colorAccent"
+                    app:thumbColor="?attr/colorAccent"
+                    android:layout_marginTop="-8dp" />
+            </LinearLayout>
+
+            <!-- Bottom Margin -->
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical"
+                android:paddingStart="8dp">
+                <RelativeLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Bottom"
+                        android:textColor="#666666"
+                        android:textSize="12sp" />
+                    <TextView
+                        android:id="@+id/tvPaddingBottomValue"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_alignParentEnd="true"
+                        android:text="0"
+                        android:textColor="#666666"
+                        android:textSize="12sp" />
+                </RelativeLayout>
+                <com.google.android.material.slider.Slider
+                    android:id="@+id/sliderPaddingBottom"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:stepSize="1"
+                    android:valueFrom="0"
+                    android:valueTo="50"
+                    app:labelBehavior="gone"
+                    app:trackColorActive="?attr/colorAccent"
+                    app:thumbColor="?attr/colorAccent"
+                    android:layout_marginTop="-8dp" />
+            </LinearLayout>
+        </LinearLayout>
+
     </LinearLayout>
 </androidx.core.widget.NestedScrollView>

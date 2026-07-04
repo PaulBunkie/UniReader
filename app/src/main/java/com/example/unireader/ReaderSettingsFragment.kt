@@ -7,6 +7,7 @@ import android.view.ViewGroup
 import android.widget.TextView
 import androidx.fragment.app.Fragment
 import com.google.android.material.slider.Slider
+import java.util.Locale
 
 class ReaderSettingsFragment : Fragment() {
 
@@ -40,10 +41,10 @@ class ReaderSettingsFragment : Fragment() {
         val tvSpacingValue = view.findViewById<TextView>(R.id.tvParagraphSpacingValue)
 
         sliderSpacing.value = activity.settings.paragraphSpacing
-        tvSpacingValue.text = String.format("%.1f", activity.settings.paragraphSpacing)
+        tvSpacingValue.text = String.format(Locale.US, "%.1f", activity.settings.paragraphSpacing)
 
         sliderSpacing.addOnChangeListener { _, value, fromUser ->
-            tvSpacingValue.text = String.format("%.1f", value)
+            tvSpacingValue.text = String.format(Locale.US, "%.1f", value)
             if (fromUser) {
                 activity.settings.paragraphSpacing = value
                 activity.applyCurrentSettings()
@@ -56,10 +57,10 @@ class ReaderSettingsFragment : Fragment() {
         val tvLineHeightValue = view.findViewById<TextView>(R.id.tvLineHeightValue)
 
         sliderLineHeight.value = activity.settings.lineHeight
-        tvLineHeightValue.text = String.format("%.1f", activity.settings.lineHeight)
+        tvLineHeightValue.text = String.format(Locale.US, "%.1f", activity.settings.lineHeight)
 
         sliderLineHeight.addOnChangeListener { _, value, fromUser ->
-            tvLineHeightValue.text = String.format("%.1f", value)
+            tvLineHeightValue.text = String.format(Locale.US, "%.1f", value)
             if (fromUser) {
                 activity.settings.lineHeight = value
                 activity.applyCurrentSettings()
@@ -72,10 +73,10 @@ class ReaderSettingsFragment : Fragment() {
         val tvIndentValue = view.findViewById<TextView>(R.id.tvFirstLineIndentValue)
 
         sliderIndent.value = activity.settings.firstLineIndent
-        tvIndentValue.text = String.format("%.1f", activity.settings.firstLineIndent)
+        tvIndentValue.text = String.format(Locale.US, "%.1f", activity.settings.firstLineIndent)
 
         sliderIndent.addOnChangeListener { _, value, fromUser ->
-            tvIndentValue.text = String.format("%.1f", value)
+            tvIndentValue.text = String.format(Locale.US, "%.1f", value)
             if (fromUser) {
                 activity.settings.firstLineIndent = value
                 activity.applyCurrentSettings()

@@ -108,6 +108,7 @@ class ReaderActivity : AppCompatActivity() {
         }
 
         updateUiState(animate = false)
+        updateWebViewPadding()
     }
 
     private fun updateBookTitles() {
@@ -192,11 +193,22 @@ class ReaderActivity : AppCompatActivity() {
         }
     }
 
-    fun applyCurrentSettings() {
-        val widthPx = webView.width
-        val heightPx = webView.height
-        if (widthPx <= 0 || heightPx <= 0) return
+    fun updateWebViewPadding() {
+        val density = resources.displayMetrics.density
+        val pl = (settings.paddingLeft * density).toInt()
+        val pr = (settings.paddingRight * density).toInt()
+        val pt = (settings.paddingTop * density).toInt()
+        val pb = (settings.paddingBottom * density).toInt()
+        
+        webViewContainer.setPadding(pl, pt, pr, pb)
+        
+        // Re-inject CSS if in paged mode because column calculation depends on WebView width
+        if (isPagedMode) {
+            applyCurrentSettings()
+        }
+    }
 
+    fun applyCurrentSettings() {
         val commonCss = """
             body { 
                 line-height: ${settings.lineHeight}; 
@@ -206,6 +218,8 @@ class ReaderActivity : AppCompatActivity() {
                 hyphens: auto;
                 word-wrap: break-word;
                 box-sizing: border-box;
+                margin: 0 !important;
+                padding: 0 !important;
             }
             p, div, h1, h2, h3, h4, h5, h6 { 
                 text-align: justify; 
@@ -215,8 +229,8 @@ class ReaderActivity : AppCompatActivity() {
             p {
                 text-indent: ${settings.firstLineIndent}em;
             }
-            * { max-width: 100vw !important; box-sizing: border-box !important; }
-            img { display: block; max-width: 88vw !important; max-height: 80vh !important; margin: 10px auto !important; object-fit: contain; }
+            * { max-width: 100% !important; box-sizing: border-box !important; }
+            img { display: block; max-width: 100% !important; max-height: 80vh !important; margin: 10px auto !important; object-fit: contain; }
         """.trimIndent()
 
         val modeCss = if (isPagedMode) {
@@ -230,7 +244,6 @@ class ReaderActivity : AppCompatActivity() {
                 background-color: transparent;
             }
             body { 
-                margin: 0 !important; padding: 0 !important; 
                 height: 100vh; width: 100vw;
                 display: block; position: relative;
                 -webkit-column-width: 100vw !important; -webkit-column-gap: 0 !important;
@@ -243,14 +256,14 @@ class ReaderActivity : AppCompatActivity() {
             }
             p, div, h1, h2, h3, h4, h5, h6 { 
                 margin: 0 !important;
-                padding: 0 6vw ${1.2 * settings.paragraphSpacing}em 6vw !important; 
+                padding: 0 0 ${1.2 * settings.paragraphSpacing}em 0 !important; 
             }
             """.trimIndent()
         } else {
             """
             html, body { overflow-x: hidden !important; overflow-y: auto !important; height: auto !important; }
             body { 
-                margin: 0; padding: 24px; visibility: visible; 
+                visibility: visible;
                 display: block !important;
             } 
             p, div, h1, h2, h3, h4, h5, h6 { 
