@@ -25,6 +25,18 @@ class MainActivity : AppCompatActivity() {
 
     private val openDocumentLauncher = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         uri?.let {
+            contentResolver.takePersistableUriPermission(it, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            
+            val epubBook = EpubParser(this).parse(it)
+            if (epubBook != null) {
+                val libraryProvider = LibraryProvider(this)
+                libraryProvider.addBook(BookMetadata(
+                    uri = it.toString(),
+                    title = epubBook.title ?: "Unknown Title",
+                    author = epubBook.author ?: "Unknown Author"
+                ))
+            }
+
             val intent = Intent(this, ReaderActivity::class.java).apply {
                 putExtra("epub_uri", it.toString())
             }

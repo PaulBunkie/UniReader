@@ -13,7 +13,8 @@ data class ReaderSettings(
     var paddingLeft: Int = 10,
     var paddingRight: Int = 10,
     var paddingTop: Int = 0,
-    var paddingBottom: Int = 0
+    var paddingBottom: Int = 0,
+    var isDarkMode: Boolean = false
 ) {
     companion object {
         private const val PREFS_NAME = "reader_settings"
@@ -30,7 +31,8 @@ data class ReaderSettings(
                 paddingLeft = prefs.getInt("paddingLeft", 10),
                 paddingRight = prefs.getInt("paddingRight", 10),
                 paddingTop = prefs.getInt("paddingTop", 0),
-                paddingBottom = prefs.getInt("paddingBottom", 0)
+                paddingBottom = prefs.getInt("paddingBottom", 0),
+                isDarkMode = prefs.getBoolean("isDarkMode", false)
             )
         }
     }
@@ -47,6 +49,7 @@ data class ReaderSettings(
             putInt("paddingRight", paddingRight)
             putInt("paddingTop", paddingTop)
             putInt("paddingBottom", paddingBottom)
+            putBoolean("isDarkMode", isDarkMode)
             apply()
         }
     }

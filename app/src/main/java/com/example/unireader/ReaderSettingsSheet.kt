@@ -33,7 +33,7 @@ class ReaderSettingsSheet : BottomSheetDialogFragment() {
             override fun createFragment(position: Int) = when (position) {
                 0 -> GeneralSettingsFragment()
                 1 -> ReaderSettingsFragment()
-                else -> PlaceholderFragment()
+                else -> ColorsSettingsFragment()
             }
         }
 

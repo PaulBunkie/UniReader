@@ -1,6 +1,6 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
     <style name="Base.Theme.UniReader" parent="Theme.Material3.DayNight.NoActionBar">
-        <!-- Reverting to pure system defaults -->
+        <!-- System defaults that adapt to light/dark -->
     </style>
 
     <style name="Theme.UniReader" parent="Base.Theme.UniReader" />

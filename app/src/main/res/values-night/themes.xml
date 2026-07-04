@@ -1,9 +1,6 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
     <!-- Same grayscale theme for dark mode to ensure consistency -->
-    <style name="Base.Theme.UniReader" parent="Theme.Material3.Light.NoActionBar">
-        <item name="colorPrimary">#000000</item>
-        <item name="colorOnPrimary">#FFFFFF</item>
-        <item name="colorAccent">#000000</item>
-        <item name="colorControlActivated">#000000</item>
+    <style name="Base.Theme.UniReader" parent="Theme.Material3.DayNight.NoActionBar">
+        <!-- System defaults for dark mode -->
     </style>
 </resources>

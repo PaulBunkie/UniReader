@@ -84,8 +84,7 @@ class ReaderActivity : AppCompatActivity() {
         val toolbarContent = layoutInflater.inflate(R.layout.reader_toolbar_content, toolbar, false)
         toolbar.addView(toolbarContent)
         
-        toolbarContent.findViewById<TextView>(R.id.tvBookTitle).setTextColor(0xFF000000.toInt())
-        toolbarContent.findViewById<TextView>(R.id.tvChapterTitle).setTextColor(0xFF000000.toInt())
+        // Removed hardcoded text colors to allow theme adaptation
 
         ViewCompat.setOnApplyWindowInsetsListener(appBarLayout) { v, insets ->
             val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
@@ -100,10 +99,19 @@ class ReaderActivity : AppCompatActivity() {
         if (uriString != null) {
             val uri = Uri.parse(uriString)
             epubBook = EpubParser(this).parse(uri)
-            epubBook?.let { 
-                chapterLoader = ChapterLoader(this, it)
+            epubBook?.let { book ->
+                chapterLoader = ChapterLoader(this, book)
                 updateBookTitles()
-                loadSpineItem(0)
+                
+                val libraryProvider = LibraryProvider(this)
+                val savedBook = libraryProvider.getBooks().find { it.uri == uriString }
+                if (savedBook != null) {
+                    currentSpineIndex = savedBook.lastSpineIndex
+                    pendingElementIndex = savedBook.lastElementIndex
+                    pendingAnchor = savedBook.lastAnchor
+                }
+                
+                loadSpineItem(currentSpineIndex)
             }
         }
 
@@ -128,6 +136,13 @@ class ReaderActivity : AppCompatActivity() {
     override fun onCreateOptionsMenu(menu: Menu): Boolean {
         menuInflater.inflate(R.menu.menu_reader, menu)
         return true
+    }
+
+    override fun onPrepareOptionsMenu(menu: Menu): Boolean {
+        val textColor = if (settings.isDarkMode) 0xFFE0E0E0.toInt() else 0xFF000000.toInt()
+        menu.findItem(R.id.action_toc)?.icon?.setTint(textColor)
+        menu.findItem(R.id.action_settings)?.icon?.setTint(textColor)
+        return super.onPrepareOptionsMenu(menu)
     }
 
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
@@ -171,6 +186,19 @@ class ReaderActivity : AppCompatActivity() {
         }
     }
 
+    override fun onPause() {
+        super.onPause()
+        saveReadingPosition()
+    }
+
+    private fun saveReadingPosition() {
+        val uri = intent.getStringExtra("epub_uri") ?: return
+        captureCurrentElementIndex { idx ->
+            val libraryProvider = LibraryProvider(this)
+            libraryProvider.updateBookProgress(uri, currentSpineIndex, idx, null)
+        }
+    }
+
     private fun captureCurrentElementIndex(onCaptured: (Int) -> Unit) {
         val js = """
             (function() {
@@ -209,7 +237,14 @@ class ReaderActivity : AppCompatActivity() {
     }
 
     fun applyCurrentSettings() {
+        val isDarkMode = settings.isDarkMode
+        val bgColor = if (isDarkMode) "#121212" else "#FFFFFF"
+        val textColor = if (isDarkMode) "#E0E0E0" else "#000000"
+
         val commonCss = """
+            html {
+                background-color: $bgColor !important;
+            }
             body { 
                 line-height: ${settings.lineHeight}; 
                 font-family: sans-serif; 
@@ -220,11 +255,14 @@ class ReaderActivity : AppCompatActivity() {
                 box-sizing: border-box;
                 margin: 0 !important;
                 padding: 0 !important;
+                background-color: $bgColor !important;
+                color: $textColor !important;
             }
             p, div, h1, h2, h3, h4, h5, h6 { 
                 text-align: justify; 
                 hyphens: auto; 
                 box-sizing: border-box;
+                color: $textColor !important;
             }
             p {
                 text-indent: ${settings.firstLineIndent}em;
@@ -281,6 +319,29 @@ class ReaderActivity : AppCompatActivity() {
         val windowInsetsController = WindowCompat.getInsetsController(window, window.decorView)
         val params = webViewContainer.layoutParams as CoordinatorLayout.LayoutParams
 
+        val isDarkMode = settings.isDarkMode
+        val bgColor = if (isDarkMode) 0xFF121212.toInt() else 0xFFFFFFFF.toInt()
+        val panelColor = if (isDarkMode) 0xFF1E1E1E.toInt() else 0xFFF0F0F0.toInt()
+        val textColor = if (isDarkMode) 0xFFE0E0E0.toInt() else 0xFF000000.toInt()
+
+        findViewById<View>(R.id.readerRoot)?.setBackgroundColor(bgColor)
+        appBarLayout.setBackgroundColor(panelColor)
+        bottomPanel.setBackgroundColor(panelColor)
+        
+        findViewById<Toolbar>(R.id.toolbar)?.let { toolbar ->
+            toolbar.setTitleTextColor(textColor)
+            toolbar.navigationIcon?.setTint(textColor)
+            toolbar.overflowIcon?.setTint(textColor)
+            
+            val tvBookTitle = toolbar.findViewById<TextView>(R.id.tvBookTitle)
+            val tvChapterTitle = toolbar.findViewById<TextView>(R.id.tvChapterTitle)
+            tvBookTitle?.setTextColor(textColor)
+            tvChapterTitle?.setTextColor(textColor)
+        }
+        
+        findViewById<TextView>(R.id.tvProgressPlaceholder)?.setTextColor(textColor)
+        invalidateOptionsMenu()
+
         if (isFullscreenPref) {
             params.behavior = null 
             params.topMargin = 0
@@ -297,26 +358,23 @@ class ReaderActivity : AppCompatActivity() {
                 appBarLayout.bringToFront()
                 bottomPanel.bringToFront()
             }
-            appBarLayout.setBackgroundColor(0xE6F0F0F0.toInt())
-            bottomPanel.setBackgroundColor(0xE6F0F0F0.toInt())
         } else {
             windowInsetsController?.show(WindowInsetsCompat.Type.systemBars())
             isUiOverlayVisible = true
             appBarLayout.visibility = View.VISIBLE
             bottomPanel.visibility = View.VISIBLE
             
-            appBarLayout.post {
-                webViewContainer.updateLayoutParams<CoordinatorLayout.LayoutParams> { 
-                    topMargin = appBarLayout.height 
-                    bottomMargin = bottomPanel.height
-                }
+            val topH = if (appBarLayout.height > 0) appBarLayout.height else (56 * resources.displayMetrics.density).toInt()
+            val botH = if (bottomPanel.height > 0) bottomPanel.height else (56 * resources.displayMetrics.density).toInt()
+            
+            webViewContainer.updateLayoutParams<CoordinatorLayout.LayoutParams> { 
+                topMargin = topH
+                bottomMargin = botH
             }
-            appBarLayout.setBackgroundColor(0xFFF0F0F0.toInt())
-            bottomPanel.setBackgroundColor(0xFFF0F0F0.toInt())
         }
         
         webViewContainer.layoutParams = params
-        webView.postDelayed({ applyCurrentSettings() }, 50)
+        applyCurrentSettings()
     }
 
     private fun setupGestures() {
@@ -376,6 +434,7 @@ class ReaderActivity : AppCompatActivity() {
                     if (currentSpineIndex != index) {
                         currentSpineIndex = index
                         updateChapterTitle()
+                        saveReadingPosition()
                     }
                 }
             }
@@ -565,14 +624,17 @@ class ReaderActivity : AppCompatActivity() {
         val loader = chapterLoader ?: return
         val content = loader.loadChapterHtml(currentSpineIndex) ?: return
         
+        val isDarkMode = settings.isDarkMode
+        val bgColor = if (isDarkMode) "#121212" else "#FFFFFF"
+
         val wrappedHtml = """
             <!DOCTYPE html>
-            <html ${if (content.lang != null) "lang=\"${content.lang}\"" else ""}>
+            <html ${if (content.lang != null) "lang=\"${content.lang}\"" else ""} style="background-color: $bgColor;">
             <head>
                 <style id="reader-style"></style>
                 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
             </head>
-            <body data-mode="paged" style="visibility: hidden !important; margin: 0 !important; padding: 0 !important; background-color: transparent;">
+            <body data-mode="paged" style="visibility: hidden !important; margin: 0 !important; padding: 0 !important; background-color: $bgColor !important;">
                 ${content.html}
             </body>
             </html>
@@ -581,14 +643,17 @@ class ReaderActivity : AppCompatActivity() {
     }
 
     private fun initSeamlessScroll() {
+        val isDarkMode = settings.isDarkMode
+        val bgColor = if (isDarkMode) "#121212" else "#FFFFFF"
+        
         val html = """
             <!DOCTYPE html>
-            <html>
+            <html style="background-color: $bgColor;">
             <head>
                 <style id="reader-style"></style>
                 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
             </head>
-            <body>
+            <body style="background-color: $bgColor !important;">
                 <div id="chapters-container"></div>
                 <script>
                     var observer = new IntersectionObserver(function(entries) {
