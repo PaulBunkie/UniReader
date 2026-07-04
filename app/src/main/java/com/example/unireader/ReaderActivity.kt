@@ -235,6 +235,12 @@ class ReaderActivity : AppCompatActivity() {
             override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
                 val width = webView.width
                 val x = e.x
+
+                val hr = webView.hitTestResult
+                if (hr.type == WebView.HitTestResult.SRC_ANCHOR_TYPE || hr.type == WebView.HitTestResult.SRC_IMAGE_ANCHOR_TYPE) {
+                    return false
+                }
+
                 when {
                     x < width * 0.3 -> if (isPagedMode) prevPage()
                     x > width * 0.7 -> if (isPagedMode) nextPage()
@@ -353,7 +359,7 @@ class ReaderActivity : AppCompatActivity() {
                 }
                 
                 if (shouldJumpToLastPage) {
-                    webView.postDelayed({ executeJumpToLastPage() }, 100)
+                    executeJumpToLastPage()
                 }
             }
         }
@@ -388,6 +394,7 @@ class ReaderActivity : AppCompatActivity() {
     }
 
     private fun handleInternalLink(url: String) {
+        shouldJumpToLastPage = false
         if (!url.startsWith("epub://") && !url.contains("#")) return
 
         val cleanPath = url.replace("epub://", "")
@@ -632,18 +639,18 @@ class ReaderActivity : AppCompatActivity() {
 
     private fun loadNextSpineItem() {
         if (currentSpineIndex < (epubBook?.spine?.size ?: 0) - 1) {
-            loadSpineItem(currentSpineIndex + 1)
+            loadSpineItem(currentSpineIndex + 1, jumpToLast = false)
         }
     }
 
     private fun loadPrevSpineItem() {
         if (currentSpineIndex > 0) {
-            shouldJumpToLastPage = true
-            loadSpineItem(currentSpineIndex - 1)
+            loadSpineItem(currentSpineIndex - 1, jumpToLast = true)
         }
     }
 
     private fun executeJumpToLastPage() {
+        shouldJumpToLastPage = false
         if (isPagedMode) {
             webView.evaluateJavascript("""
                 (function() { 
@@ -653,22 +660,21 @@ class ReaderActivity : AppCompatActivity() {
                     window.scrollTo(lastPage * pw, 0); 
                     document.body.style.visibility = 'visible'; 
                 })();
-            """.trimIndent()) {
-                shouldJumpToLastPage = false
-            }
+            """.trimIndent(), null)
         } else {
-            webView.evaluateJavascript("(function() { window.scrollTo(0, document.documentElement.scrollHeight); document.body.style.visibility = 'visible'; })();") {
-                shouldJumpToLastPage = false
-            }
+            webView.evaluateJavascript("(function() { window.scrollTo(0, document.documentElement.scrollHeight); document.body.style.visibility = 'visible'; })();", null)
         }
     }
 
-    private fun loadSpineItem(index: Int) {
+    private fun loadSpineItem(index: Int, jumpToLast: Boolean = false) {
         currentSpineIndex = index
+        shouldJumpToLastPage = jumpToLast
         updateChapterTitle()
         
         if (isPagedMode) {
             initPagedView()
+        } else {
+            initSeamlessScroll()
         }
     }
 
