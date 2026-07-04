@@ -39,9 +39,9 @@ class ReaderSettingsSheet : BottomSheetDialogFragment() {
 
         TabLayoutMediator(tabLayout, viewPager) { tab, position ->
             tab.text = when (position) {
-                0 -> "General"
-                1 -> "Reader"
-                2 -> "Colors"
+                0 -> getString(R.string.tab_general)
+                1 -> getString(R.string.tab_styles)
+                2 -> getString(R.string.tab_colors)
                 else -> ""
             }
         }.attach()
