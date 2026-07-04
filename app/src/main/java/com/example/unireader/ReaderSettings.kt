@@ -6,7 +6,10 @@ data class ReaderSettings(
     var fontFamily: String = "sans-serif",
     var fontSize: Int = 18,
     var isItalic: Boolean = false,
-    var isBold: Boolean = false
+    var isBold: Boolean = false,
+    var paragraphSpacing: Float = 0.0f,
+    var lineHeight: Float = 1.6f,
+    var firstLineIndent: Float = 0.0f
 ) {
     companion object {
         private const val PREFS_NAME = "reader_settings"
@@ -16,7 +19,10 @@ data class ReaderSettings(
                 fontFamily = prefs.getString("fontFamily", "sans-serif") ?: "sans-serif",
                 fontSize = prefs.getInt("fontSize", 18),
                 isItalic = prefs.getBoolean("isItalic", false),
-                isBold = prefs.getBoolean("isBold", false)
+                isBold = prefs.getBoolean("isBold", false),
+                paragraphSpacing = prefs.getFloat("paragraphSpacing", 0.0f),
+                lineHeight = prefs.getFloat("lineHeight", 1.6f),
+                firstLineIndent = prefs.getFloat("firstLineIndent", 0.0f)
             )
         }
     }
@@ -26,6 +32,9 @@ data class ReaderSettings(
             putInt("fontSize", fontSize)
             putBoolean("isItalic", isItalic)
             putBoolean("isBold", isBold)
+            putFloat("paragraphSpacing", paragraphSpacing)
+            putFloat("lineHeight", lineHeight)
+            putFloat("firstLineIndent", firstLineIndent)
             apply()
         }
     }

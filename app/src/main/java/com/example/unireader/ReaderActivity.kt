@@ -193,8 +193,75 @@ class ReaderActivity : AppCompatActivity() {
     }
 
     fun applyCurrentSettings() {
-        if (isPagedMode) injectPaginationCss()
-        else injectScrollCss()
+        val widthPx = webView.width
+        val heightPx = webView.height
+        if (widthPx <= 0 || heightPx <= 0) return
+
+        val commonCss = """
+            body { 
+                line-height: ${settings.lineHeight}; 
+                font-family: sans-serif; 
+                font-size: ${settings.fontSize}px;
+                text-align: justify;
+                hyphens: auto;
+                word-wrap: break-word;
+                box-sizing: border-box;
+            }
+            p, div, h1, h2, h3, h4, h5, h6 { 
+                text-align: justify; 
+                hyphens: auto; 
+                box-sizing: border-box;
+            }
+            p {
+                text-indent: ${settings.firstLineIndent}em;
+            }
+            * { max-width: 100vw !important; box-sizing: border-box !important; }
+            img { display: block; max-width: 88vw !important; max-height: 80vh !important; margin: 10px auto !important; object-fit: contain; }
+        """.trimIndent()
+
+        val modeCss = if (isPagedMode) {
+            val snapType = if (currentSpineIndex == 0) "none" else "x mandatory"
+            """
+            html { 
+                margin: 0; padding: 0; height: 100vh; width: 100vw; 
+                overflow-x: auto; overflow-y: hidden; 
+                scroll-snap-type: $snapType; 
+                -webkit-overflow-scrolling: touch;
+                background-color: transparent;
+            }
+            body { 
+                margin: 0 !important; padding: 0 !important; 
+                height: 100vh; width: 100vw;
+                display: block; position: relative;
+                -webkit-column-width: 100vw !important; -webkit-column-gap: 0 !important;
+                column-width: 100vw !important; column-gap: 0 !important;
+                -webkit-column-fill: auto; column-fill: auto;
+            }
+            section, div, p, h1, h2, h3, h4, h5, h6 { 
+                scroll-snap-align: start; 
+                scroll-snap-stop: always;
+            }
+            p, div, h1, h2, h3, h4, h5, h6 { 
+                margin: 0 !important;
+                padding: 0 6vw ${1.2 * settings.paragraphSpacing}em 6vw !important; 
+            }
+            """.trimIndent()
+        } else {
+            """
+            html, body { overflow-x: hidden !important; overflow-y: auto !important; height: auto !important; }
+            body { 
+                margin: 0; padding: 24px; visibility: visible; 
+                display: block !important;
+            } 
+            p, div, h1, h2, h3, h4, h5, h6 { 
+                margin-top: 0; 
+                margin-bottom: ${settings.paragraphSpacing}em !important; 
+            }
+            """.trimIndent()
+        }
+
+        val finalCss = (commonCss + modeCss).replace("\n", " ")
+        webView.evaluateJavascript("var style = document.getElementById('reader-style') || document.createElement('style'); style.id = 'reader-style'; style.innerHTML = '$finalCss'; if (!style.parentNode) document.head.appendChild(style);", null)
     }
 
     fun updateUiState(animate: Boolean = true) {
@@ -729,63 +796,6 @@ class ReaderActivity : AppCompatActivity() {
         path.endsWith(".png") -> "image/png"
         path.endsWith(".gif") -> "image/gif"
         else -> "application/octet-stream"
-    }
-
-    private fun injectPaginationCss() {
-        val widthPx = webView.width
-        val heightPx = webView.height
-        if (widthPx <= 0 || heightPx <= 0) return
-        
-        // Отключаем Scroll Snap ТОЛЬКО для первой страницы первой главы
-        val snapType = if (currentSpineIndex == 0) "none" else "x mandatory"
-
-        val css = """
-            html { 
-                margin: 0; padding: 0; height: 100vh; width: 100vw; 
-                overflow-x: auto; overflow-y: hidden; 
-                scroll-snap-type: $snapType; 
-                -webkit-overflow-scrolling: touch;
-                background-color: transparent;
-            }
-            body { 
-                margin: 0 !important; padding: 0 !important; 
-                height: 100vh; width: 100vw;
-                display: block; position: relative;
-                -webkit-column-width: 100vw !important; -webkit-column-gap: 0 !important;
-                column-width: 100vw !important; column-gap: 0 !important;
-                -webkit-column-fill: auto; column-fill: auto;
-                line-height: 1.6; font-family: sans-serif; font-size: ${settings.fontSize}px;
-                box-sizing: border-box;
-            }
-            /* Каждая страница - это точка прилипания */
-            section, div, p, h1, h2, h3, h4, h5, h6 { 
-                scroll-snap-align: start; 
-                scroll-snap-stop: always;
-            }
-            p, div, h1, h2, h3, h4, h5, h6 { 
-                margin: 0 !important;
-                padding: 0 6vw 1.2em 6vw !important; 
-                text-align: justify; hyphens: auto; 
-                word-wrap: break-word;
-                box-sizing: border-box;
-            }
-            * { max-width: 100vw !important; box-sizing: border-box !important; }
-            img { display: block; max-width: 88vw !important; max-height: 80vh !important; margin: 10px auto !important; object-fit: contain; }
-        """.trimIndent().replace("\n", "")
-        webView.evaluateJavascript("var style = document.getElementById('reader-style') || document.createElement('style'); style.id = 'reader-style'; style.innerHTML = '$css'; if (!style.parentNode) document.head.appendChild(style);", null)
-    }
-
-    private fun injectScrollCss() {
-        val css = """
-            html, body { overflow-x: hidden !important; overflow-y: auto !important; height: auto !important; }
-            body { 
-                margin: 0; padding: 24px; line-height: 1.6; font-family: sans-serif; 
-                font-size: ${settings.fontSize}px; visibility: visible; 
-                display: block !important;
-            } 
-            p, div, h1, h2, h3, h4, h5, h6 { text-align: justify; hyphens: auto; margin-top: 0; margin-bottom: 1em; }
-        """.trimIndent().replace("\n", "")
-        webView.evaluateJavascript("var style = document.getElementById('reader-style') || document.createElement('style'); style.id = 'reader-style'; style.innerHTML = '$css'; if (!style.parentNode) document.head.appendChild(style);", null)
     }
 
     private fun nextPage() {

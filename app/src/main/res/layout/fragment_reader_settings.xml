@@ -1,61 +1,148 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<androidx.core.widget.NestedScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:padding="24dp">
-
-    <TextView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Font Size"
-        android:textColor="?android:attr/textColorPrimary"
-        android:textSize="16sp" />
+    android:fillViewport="true">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="12dp"
-        android:gravity="center_vertical"
-        android:orientation="horizontal">
+        android:orientation="vertical"
+        android:paddingHorizontal="20dp"
+        android:paddingVertical="12dp">
 
-        <TextView
-            android:layout_width="wrap_content"
+        <!-- Font Size -->
+        <RelativeLayout
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="A"
-            android:textColor="?android:attr/textColorSecondary"
-            android:textSize="14sp" />
-
+            android:layout_marginTop="8dp">
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Font Size"
+                android:textColor="#333333"
+                android:textSize="14sp"
+                android:textStyle="bold" />
+            <TextView
+                android:id="@+id/tvFontSizeValue"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_alignParentEnd="true"
+                android:text="18"
+                android:textColor="#666666"
+                android:textSize="13sp" />
+        </RelativeLayout>
         <com.google.android.material.slider.Slider
             android:id="@+id/sliderFontSize"
-            android:layout_width="0dp"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginStart="8dp"
-            android:layout_marginEnd="8dp"
-            android:layout_weight="1"
             android:stepSize="1"
             android:valueFrom="10"
             android:valueTo="32"
-            app:trackColorActive="?android:attr/colorAccent"
-            app:trackColorInactive="@android:color/darker_gray" />
+            app:labelBehavior="gone"
+            app:trackColorActive="?attr/colorAccent"
+            app:thumbColor="?attr/colorAccent"
+            android:layout_marginTop="-4dp" />
 
-        <TextView
-            android:layout_width="wrap_content"
+        <!-- Paragraph Spacing -->
+        <RelativeLayout
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="A"
-            android:textColor="?android:attr/textColorPrimary"
-            android:textSize="26sp" />
+            android:layout_marginTop="12dp">
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Paragraph Spacing"
+                android:textColor="#333333"
+                android:textSize="14sp"
+                android:textStyle="bold" />
+            <TextView
+                android:id="@+id/tvParagraphSpacingValue"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_alignParentEnd="true"
+                android:text="1.0"
+                android:textColor="#666666"
+                android:textSize="13sp" />
+        </RelativeLayout>
+        <com.google.android.material.slider.Slider
+            android:id="@+id/sliderParagraphSpacing"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:stepSize="0.1"
+            android:valueFrom="0.0"
+            android:valueTo="3.0"
+            app:labelBehavior="gone"
+            app:trackColorActive="?attr/colorAccent"
+            app:thumbColor="?attr/colorAccent"
+            android:layout_marginTop="-4dp" />
+
+        <!-- Line Height -->
+        <RelativeLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp">
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Line Height"
+                android:textColor="#333333"
+                android:textSize="14sp"
+                android:textStyle="bold" />
+            <TextView
+                android:id="@+id/tvLineHeightValue"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_alignParentEnd="true"
+                android:text="1.6"
+                android:textColor="#666666"
+                android:textSize="13sp" />
+        </RelativeLayout>
+        <com.google.android.material.slider.Slider
+            android:id="@+id/sliderLineHeight"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:stepSize="0.1"
+            android:valueFrom="1.0"
+            android:valueTo="3.0"
+            app:labelBehavior="gone"
+            app:trackColorActive="?attr/colorAccent"
+            app:thumbColor="?attr/colorAccent"
+            android:layout_marginTop="-4dp" />
+
+        <!-- First Line Indent -->
+        <RelativeLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp">
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="First Line Indent"
+                android:textColor="#333333"
+                android:textSize="14sp"
+                android:textStyle="bold" />
+            <TextView
+                android:id="@+id/tvFirstLineIndentValue"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_alignParentEnd="true"
+                android:text="0.0"
+                android:textColor="#666666"
+                android:textSize="13sp" />
+        </RelativeLayout>
+        <com.google.android.material.slider.Slider
+            android:id="@+id/sliderFirstLineIndent"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:stepSize="0.5"
+            android:valueFrom="0.0"
+            android:valueTo="5.0"
+            app:labelBehavior="gone"
+            app:trackColorActive="?attr/colorAccent"
+            app:thumbColor="?attr/colorAccent"
+            android:layout_marginTop="-4dp" />
+
     </LinearLayout>
-
-    <TextView
-        android:id="@+id/tvFontSizeValue"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="4dp"
-        android:gravity="center"
-        android:text="18"
-        android:textColor="?android:attr/textColorSecondary"
-        android:textSize="14sp" />
-
-</LinearLayout>
+</androidx.core.widget.NestedScrollView>
