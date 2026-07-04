@@ -617,9 +617,9 @@ class ReaderActivity : AppCompatActivity() {
         webView.loadDataWithBaseURL("epub://seamless/", html, "text/html", "UTF-8", null)
         
         webView.postDelayed({
+            loadAndPrependChapter(currentSpineIndex - 1)
             loadAndAppendChapter(currentSpineIndex, idxToUse)
             loadAndAppendChapter(currentSpineIndex + 1)
-            loadAndPrependChapter(currentSpineIndex - 1)
         }, 500)
     }
 
