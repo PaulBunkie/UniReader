@@ -15,6 +15,7 @@ import android.view.WindowManager
 import android.webkit.JavascriptInterface
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
+import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.TextView
@@ -255,6 +256,8 @@ class ReaderActivity : AppCompatActivity() {
     private fun setupWebView() {
         webView.settings.javaScriptEnabled = true
         webView.settings.allowFileAccess = true
+        webView.settings.cacheMode = WebSettings.LOAD_NO_CACHE
+        webView.settings.domStorageEnabled = true
         
         webView.addJavascriptInterface(object {
             @JavascriptInterface
@@ -672,6 +675,9 @@ class ReaderActivity : AppCompatActivity() {
         updateChapterTitle()
         
         if (isPagedMode) {
+            webView.stopLoading()
+            webView.loadUrl("about:blank")
+            webView.clearHistory()
             initPagedView()
         } else {
             initSeamlessScroll()
