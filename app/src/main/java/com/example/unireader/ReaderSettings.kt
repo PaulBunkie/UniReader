@@ -14,7 +14,8 @@ data class ReaderSettings(
     var paddingRight: Int = 10,
     var paddingTop: Int = 0,
     var paddingBottom: Int = 0,
-    var isDarkMode: Boolean = false
+    var isDarkMode: Boolean = false,
+    var isPagedMode: Boolean = true
 ) {
     companion object {
         private const val PREFS_NAME = "reader_settings"
@@ -32,25 +33,27 @@ data class ReaderSettings(
                 paddingRight = prefs.getInt("paddingRight", 10),
                 paddingTop = prefs.getInt("paddingTop", 0),
                 paddingBottom = prefs.getInt("paddingBottom", 0),
-                isDarkMode = prefs.getBoolean("isDarkMode", false)
+                isDarkMode = prefs.getBoolean("isDarkMode", false),
+                isPagedMode = prefs.getBoolean("isPagedMode", true)
             )
         }
     }
     fun save(context: Context) {
-        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit().apply {
-            putString("fontFamily", fontFamily)
-            putInt("fontSize", fontSize)
-            putBoolean("isItalic", isItalic)
-            putBoolean("isBold", isBold)
-            putFloat("paragraphSpacing", paragraphSpacing)
-            putFloat("lineHeight", lineHeight)
-            putFloat("firstLineIndent", firstLineIndent)
-            putInt("paddingLeft", paddingLeft)
-            putInt("paddingRight", paddingRight)
-            putInt("paddingTop", paddingTop)
-            putInt("paddingBottom", paddingBottom)
-            putBoolean("isDarkMode", isDarkMode)
-            apply()
-        }
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val editor = prefs.edit()
+        editor.putString("fontFamily", fontFamily)
+        editor.putInt("fontSize", fontSize)
+        editor.putBoolean("isItalic", isItalic)
+        editor.putBoolean("isBold", isBold)
+        editor.putFloat("paragraphSpacing", paragraphSpacing)
+        editor.putFloat("lineHeight", lineHeight)
+        editor.putFloat("firstLineIndent", firstLineIndent)
+        editor.putInt("paddingLeft", paddingLeft)
+        editor.putInt("paddingRight", paddingRight)
+        editor.putInt("paddingTop", paddingTop)
+        editor.putInt("paddingBottom", paddingBottom)
+        editor.putBoolean("isDarkMode", isDarkMode)
+        editor.putBoolean("isPagedMode", isPagedMode)
+        editor.commit() // Force immediate synchronous save
     }
 }

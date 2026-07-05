@@ -254,6 +254,9 @@ class ReaderActivity : AppCompatActivity() {
 
     fun applyCurrentSettings() {
         val isDarkMode = settings.isDarkMode
+        val bgColor = if (isDarkMode) "#121212" else "#FFFFFF"
+        val textColor = if (isDarkMode) "#E0E0E0" else "#000000"
+        
         webView.setBackgroundColor(if (isDarkMode) 0xFF121212.toInt() else 0xFFFFFFFF.toInt())
 
         val commonCss = """
@@ -267,27 +270,20 @@ class ReaderActivity : AppCompatActivity() {
                 box-sizing: border-box;
                 margin: 0 !important;
                 padding: 0 !important;
+                background-color: $bgColor !important;
+                color: $textColor !important;
             }
-            p, div, h1, h2, h3, h4, h5, h6 { 
+            p, div, h1, h2, h3, h4, h5, h6, li { 
                 text-align: justify; 
                 hyphens: auto; 
                 box-sizing: border-box;
+                color: $textColor !important;
             }
             p {
                 text-indent: ${settings.firstLineIndent}em;
             }
             * { max-width: 100% !important; box-sizing: border-box !important; }
             img { display: block; max-width: 100% !important; max-height: 80vh !important; margin: 10px auto !important; object-fit: contain; }
-            
-            /* SYSTEM DARK MODE MEDIA QUERY */
-            @media (prefers-color-scheme: dark) {
-                body, html { background-color: #121212 !important; color: #E0E0E0 !important; }
-                p, div, h1, h2, h3, h4, h5, h6, li { color: #E0E0E0 !important; }
-            }
-            @media (prefers-color-scheme: light) {
-                body, html { background-color: #FFFFFF !important; color: #000000 !important; }
-                p, div, h1, h2, h3, h4, h5, h6, li { color: #000000 !important; }
-            }
         """.trimIndent()
 
         val modeCss = if (isPagedMode) {
@@ -453,58 +449,6 @@ class ReaderActivity : AppCompatActivity() {
                 applyCurrentSettings()
                 injectIndexingScript()
                 
-                if (isPagedMode) {
-                    webView.evaluateJavascript("""
-                        (function() {
-                            setTimeout(function() {
-                                document.body.style.setProperty('visibility', 'visible', 'important');
-                            }, 100);
-                        })();
-                    """.trimIndent(), null)
-                }
-                
-                if (isPagedMode && (pendingAnchor != null || pendingElementIndex >= 0)) {
-                    val anchor = pendingAnchor
-                    val idx = pendingElementIndex
-                    pendingAnchor = null
-                    pendingElementIndex = -1
-                    
-                    webView.evaluateJavascript("""
-                        (function() {
-                            var retry = 0;
-                            var lastWidth = 0;
-                            function sync() {
-                                var target = null;
-                                if ('$anchor' !== 'null') {
-                                    target = document.getElementById('$anchor') || document.getElementsByName('$anchor')[0];
-                                } else if ($idx >= 0) {
-                                    target = document.querySelector('[data-idx="$idx"]');
-                                }
-                                
-                                var pw = window.innerWidth;
-                                var sw = document.documentElement.scrollWidth;
-                                
-                                if ((target && sw > pw && sw === lastWidth) || retry > 60) {
-                                    if (target) {
-                                        var rect = target.getBoundingClientRect();
-                                        // Точный расчет страницы элемента
-                                        var pageIndex = Math.round((window.pageXOffset + rect.left) / pw);
-                                        window.scrollTo(pageIndex * pw, 0);
-                                    }
-                                    document.body.style.visibility = 'visible';
-                                } else {
-                                    lastWidth = sw;
-                                    retry++;
-                                    setTimeout(sync, 50);
-                                }
-                            }
-                            sync();
-                        })();
-                    """.trimIndent(), null)
-                } else if (isPagedMode) {
-                    webView.evaluateJavascript("document.body.style.visibility = 'visible';", null)
-                }
-                
                 if (shouldJumpToLastPage) {
                     executeJumpToLastPage()
                 }
@@ -581,7 +525,6 @@ class ReaderActivity : AppCompatActivity() {
             if (isPagedMode) {
                 webView.evaluateJavascript("""
                     (function() {
-                        document.body.style.visibility = 'hidden';
                         var retry = 0;
                         var lastWidth = 0;
                         function sync() {
@@ -594,7 +537,6 @@ class ReaderActivity : AppCompatActivity() {
                                     var pageIndex = Math.floor((window.pageXOffset + rect.left + 2) / pw);
                                     window.scrollTo(pageIndex * pw, 0);
                                 }
-                                document.body.style.visibility = 'visible';
                             } else {
                                 lastWidth = sw;
                                 retry++;
@@ -631,7 +573,7 @@ class ReaderActivity : AppCompatActivity() {
                 <style id="reader-style"></style>
                 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
             </head>
-            <body data-mode="paged" style="visibility: hidden !important; margin: 0 !important; padding: 0 !important; background-color: $bgColor !important;">
+            <body data-mode="paged" style="margin: 0 !important; padding: 0 !important; background-color: $bgColor !important;">
                 ${content.html}
             </body>
             </html>
@@ -838,9 +780,6 @@ class ReaderActivity : AppCompatActivity() {
         updateChapterTitle()
         
         if (isPagedMode) {
-            webView.stopLoading()
-            webView.loadUrl("about:blank")
-            webView.clearHistory()
             initPagedView()
         } else {
             initSeamlessScroll()
