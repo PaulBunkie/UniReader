@@ -1,7 +1,8 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
     <style name="Base.Theme.UniReader" parent="Theme.Material3.DayNight.NoActionBar">
+        <!-- Exact match for WebView background in dark mode -->
         <item name="panelBackgroundColor">@color/glass_dark</item>
-        <item name="colorSurface">#1E1E1E</item>
+        <item name="colorSurface">#121212</item>
         <item name="colorOnSurface">#E0E0E0</item>
         <item name="android:windowBackground">#121212</item>
         <item name="bottomSheetDialogTheme">@style/TransparentBottomSheetDialog</item>
