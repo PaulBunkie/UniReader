@@ -60,13 +60,14 @@ class ReaderActivity : AppCompatActivity() {
     private lateinit var gestureDetector: GestureDetectorCompat
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        // Apply theme mode before super.onCreate/setContentView
         settings = ReaderSettings.load(this)
+        
+        // APPLY SYSTEM THEME IMMEDIATELY
         val mode = if (settings.isDarkMode) AppCompatDelegate.MODE_NIGHT_YES else AppCompatDelegate.MODE_NIGHT_NO
         if (AppCompatDelegate.getDefaultNightMode() != mode) {
             AppCompatDelegate.setDefaultNightMode(mode)
         }
-        
+
         super.onCreate(savedInstanceState)
         
         WindowCompat.setDecorFitsSystemWindows(window, false)
@@ -88,7 +89,7 @@ class ReaderActivity : AppCompatActivity() {
 
         val toolbarContent = layoutInflater.inflate(R.layout.reader_toolbar_content, toolbar, false)
         toolbar.addView(toolbarContent)
-        
+
         ViewCompat.setOnApplyWindowInsetsListener(appBarLayout) { v, insets ->
             val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
             v.setPadding(0, systemBars.top, 0, 0)
@@ -98,7 +99,14 @@ class ReaderActivity : AppCompatActivity() {
         setupWebView()
         setupGestures()
 
-        val uriString = intent.getStringExtra("epub_uri")
+        // STATE RESTORATION
+        val uriString = savedInstanceState?.getString("epub_uri") ?: intent.getStringExtra("epub_uri")
+        currentSpineIndex = savedInstanceState?.getInt("spine_index", 0) ?: 0
+        pendingElementIndex = savedInstanceState?.getInt("element_index", -1) ?: -1
+        pendingAnchor = savedInstanceState?.getString("anchor")
+        isFullscreenPref = savedInstanceState?.getBoolean("fullscreen", false) ?: false
+        isUiOverlayVisible = savedInstanceState?.getBoolean("ui_visible", true) ?: !isFullscreenPref
+
         if (uriString != null) {
             val uri = Uri.parse(uriString)
             epubBook = EpubParser(this).parse(uri)
@@ -106,12 +114,15 @@ class ReaderActivity : AppCompatActivity() {
                 chapterLoader = ChapterLoader(this, book)
                 updateBookTitles()
                 
-                val libraryProvider = LibraryProvider(this)
-                val savedBook = libraryProvider.getBooks().find { it.uri == uriString }
-                if (savedBook != null) {
-                    currentSpineIndex = savedBook.lastSpineIndex
-                    pendingElementIndex = savedBook.lastElementIndex
-                    pendingAnchor = savedBook.lastAnchor
+                // If it's a fresh open (no pending index from saveState), check LibraryProvider
+                if (savedInstanceState == null) {
+                    val libraryProvider = LibraryProvider(this)
+                    val savedBook = libraryProvider.getBooks().find { it.uri == uriString }
+                    if (savedBook != null) {
+                        currentSpineIndex = savedBook.lastSpineIndex
+                        pendingElementIndex = savedBook.lastElementIndex
+                        pendingAnchor = savedBook.lastAnchor
+                    }
                 }
                 
                 loadSpineItem(currentSpineIndex)
@@ -120,6 +131,16 @@ class ReaderActivity : AppCompatActivity() {
 
         updateUiState(animate = false)
         updateWebViewPadding()
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        intent.getStringExtra("epub_uri")?.let { outState.putString("epub_uri", it) }
+        outState.putInt("spine_index", currentSpineIndex)
+        outState.putInt("element_index", pendingElementIndex)
+        outState.putString("anchor", pendingAnchor)
+        outState.putBoolean("fullscreen", isFullscreenPref)
+        outState.putBoolean("ui_visible", isUiOverlayVisible)
     }
 
     private fun updateBookTitles() {
@@ -338,12 +359,14 @@ class ReaderActivity : AppCompatActivity() {
             appBarLayout.visibility = View.VISIBLE
             bottomPanel.visibility = View.VISIBLE
             
-            val topH = if (appBarLayout.height > 0) appBarLayout.height else (56 * resources.displayMetrics.density).toInt()
-            val botH = if (bottomPanel.height > 0) bottomPanel.height else (56 * resources.displayMetrics.density).toInt()
-            
-            webViewContainer.updateLayoutParams<CoordinatorLayout.LayoutParams> { 
-                topMargin = topH
-                bottomMargin = botH
+            // ENSURE WE HAVE ACTUAL MEASUREMENTS
+            appBarLayout.post {
+                val topH = appBarLayout.height
+                val botH = bottomPanel.height
+                webViewContainer.updateLayoutParams<CoordinatorLayout.LayoutParams> { 
+                    topMargin = topH
+                    bottomMargin = botH
+                }
             }
         }
         
