@@ -21,7 +21,7 @@
         android:id="@+id/appBarLayout"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:background="?attr/colorSurface"
+        android:background="?attr/panelBackgroundColor"
         app:elevation="0dp">
 
         <com.google.android.material.appbar.MaterialToolbar
@@ -38,7 +38,7 @@
         android:layout_width="match_parent"
         android:layout_height="56dp"
         android:layout_gravity="bottom"
-        android:background="?attr/colorSurface"
+        android:background="?attr/panelBackgroundColor"
         android:visibility="gone">
 
         <TextView
