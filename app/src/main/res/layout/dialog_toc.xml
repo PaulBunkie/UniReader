@@ -2,7 +2,7 @@
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@drawable/rounded_bottom_sheet"
+    android:background="@drawable/panel_background"
     android:orientation="vertical"
     android:padding="16dp">
 
@@ -11,7 +11,7 @@
         android:layout_height="wrap_content"
         android:layout_marginBottom="16dp"
         android:text="@string/toc_title"
-        android:textColor="#000000"
+        android:textColor="?attr/colorOnSurface"
         android:textSize="20sp"
         android:textStyle="bold" />
 

@@ -4,7 +4,6 @@ import android.annotation.SuppressLint
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import android.util.Log
 import android.view.GestureDetector
 import android.view.Menu
 import android.view.MenuItem
@@ -20,6 +19,7 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.app.AppCompatDelegate
 import androidx.appcompat.widget.Toolbar
 import androidx.coordinatorlayout.widget.CoordinatorLayout
 import androidx.core.view.GestureDetectorCompat
@@ -29,7 +29,6 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.core.view.updateLayoutParams
 import com.google.android.material.appbar.AppBarLayout
-import com.google.android.material.bottomsheet.BottomSheetDialog
 import java.io.ByteArrayInputStream
 import java.io.File
 import java.util.zip.ZipInputStream
@@ -61,8 +60,14 @@ class ReaderActivity : AppCompatActivity() {
     private lateinit var gestureDetector: GestureDetectorCompat
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
+        // Apply theme mode before super.onCreate/setContentView
         settings = ReaderSettings.load(this)
+        val mode = if (settings.isDarkMode) AppCompatDelegate.MODE_NIGHT_YES else AppCompatDelegate.MODE_NIGHT_NO
+        if (AppCompatDelegate.getDefaultNightMode() != mode) {
+            AppCompatDelegate.setDefaultNightMode(mode)
+        }
+        
+        super.onCreate(savedInstanceState)
         
         WindowCompat.setDecorFitsSystemWindows(window, false)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
@@ -84,8 +89,6 @@ class ReaderActivity : AppCompatActivity() {
         val toolbarContent = layoutInflater.inflate(R.layout.reader_toolbar_content, toolbar, false)
         toolbar.addView(toolbarContent)
         
-        // Removed hardcoded text colors to allow theme adaptation
-
         ViewCompat.setOnApplyWindowInsetsListener(appBarLayout) { v, insets ->
             val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
             v.setPadding(0, systemBars.top, 0, 0)
@@ -136,13 +139,6 @@ class ReaderActivity : AppCompatActivity() {
     override fun onCreateOptionsMenu(menu: Menu): Boolean {
         menuInflater.inflate(R.menu.menu_reader, menu)
         return true
-    }
-
-    override fun onPrepareOptionsMenu(menu: Menu): Boolean {
-        val textColor = if (settings.isDarkMode) 0xFFE0E0E0.toInt() else 0xFF000000.toInt()
-        menu.findItem(R.id.action_toc)?.icon?.setTint(textColor)
-        menu.findItem(R.id.action_settings)?.icon?.setTint(textColor)
-        return super.onPrepareOptionsMenu(menu)
     }
 
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
@@ -230,7 +226,6 @@ class ReaderActivity : AppCompatActivity() {
         
         webViewContainer.setPadding(pl, pt, pr, pb)
         
-        // Re-inject CSS if in paged mode because column calculation depends on WebView width
         if (isPagedMode) {
             applyCurrentSettings()
         }
@@ -238,13 +233,9 @@ class ReaderActivity : AppCompatActivity() {
 
     fun applyCurrentSettings() {
         val isDarkMode = settings.isDarkMode
-        val bgColor = if (isDarkMode) "#121212" else "#FFFFFF"
-        val textColor = if (isDarkMode) "#E0E0E0" else "#000000"
+        webView.setBackgroundColor(if (isDarkMode) 0xFF121212.toInt() else 0xFFFFFFFF.toInt())
 
         val commonCss = """
-            html {
-                background-color: $bgColor !important;
-            }
             body { 
                 line-height: ${settings.lineHeight}; 
                 font-family: sans-serif; 
@@ -255,20 +246,27 @@ class ReaderActivity : AppCompatActivity() {
                 box-sizing: border-box;
                 margin: 0 !important;
                 padding: 0 !important;
-                background-color: $bgColor !important;
-                color: $textColor !important;
             }
             p, div, h1, h2, h3, h4, h5, h6 { 
                 text-align: justify; 
                 hyphens: auto; 
                 box-sizing: border-box;
-                color: $textColor !important;
             }
             p {
                 text-indent: ${settings.firstLineIndent}em;
             }
             * { max-width: 100% !important; box-sizing: border-box !important; }
             img { display: block; max-width: 100% !important; max-height: 80vh !important; margin: 10px auto !important; object-fit: contain; }
+            
+            /* SYSTEM DARK MODE MEDIA QUERY */
+            @media (prefers-color-scheme: dark) {
+                body, html { background-color: #121212 !important; color: #E0E0E0 !important; }
+                p, div, h1, h2, h3, h4, h5, h6, li { color: #E0E0E0 !important; }
+            }
+            @media (prefers-color-scheme: light) {
+                body, html { background-color: #FFFFFF !important; color: #000000 !important; }
+                p, div, h1, h2, h3, h4, h5, h6, li { color: #000000 !important; }
+            }
         """.trimIndent()
 
         val modeCss = if (isPagedMode) {
@@ -279,7 +277,6 @@ class ReaderActivity : AppCompatActivity() {
                 overflow-x: auto; overflow-y: hidden; 
                 scroll-snap-type: $snapType; 
                 -webkit-overflow-scrolling: touch;
-                background-color: transparent;
             }
             body { 
                 height: 100vh; width: 100vw;
@@ -318,29 +315,6 @@ class ReaderActivity : AppCompatActivity() {
     fun updateUiState(animate: Boolean = true) {
         val windowInsetsController = WindowCompat.getInsetsController(window, window.decorView)
         val params = webViewContainer.layoutParams as CoordinatorLayout.LayoutParams
-
-        val isDarkMode = settings.isDarkMode
-        val bgColor = if (isDarkMode) 0xFF121212.toInt() else 0xFFFFFFFF.toInt()
-        val panelColor = if (isDarkMode) 0xFF1E1E1E.toInt() else 0xFFF0F0F0.toInt()
-        val textColor = if (isDarkMode) 0xFFE0E0E0.toInt() else 0xFF000000.toInt()
-
-        findViewById<View>(R.id.readerRoot)?.setBackgroundColor(bgColor)
-        appBarLayout.setBackgroundColor(panelColor)
-        bottomPanel.setBackgroundColor(panelColor)
-        
-        findViewById<Toolbar>(R.id.toolbar)?.let { toolbar ->
-            toolbar.setTitleTextColor(textColor)
-            toolbar.navigationIcon?.setTint(textColor)
-            toolbar.overflowIcon?.setTint(textColor)
-            
-            val tvBookTitle = toolbar.findViewById<TextView>(R.id.tvBookTitle)
-            val tvChapterTitle = toolbar.findViewById<TextView>(R.id.tvChapterTitle)
-            tvBookTitle?.setTextColor(textColor)
-            tvChapterTitle?.setTextColor(textColor)
-        }
-        
-        findViewById<TextView>(R.id.tvProgressPlaceholder)?.setTextColor(textColor)
-        invalidateOptionsMenu()
 
         if (isFullscreenPref) {
             params.behavior = null 

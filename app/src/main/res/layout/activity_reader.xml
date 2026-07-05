@@ -4,9 +4,8 @@
     android:id="@+id/readerRoot"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#FFFFFF">
+    android:background="?attr/colorSurface">
 
-    <!-- Container for WebView to handle dynamic margins without resizing internal content -->
     <FrameLayout
         android:id="@+id/webViewContainer"
         android:layout_width="match_parent"
@@ -22,15 +21,15 @@
         android:id="@+id/appBarLayout"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:background="#FFF0F0F0"
-        app:elevation="4dp">
+        android:background="?attr/colorSurface"
+        app:elevation="0dp">
 
         <com.google.android.material.appbar.MaterialToolbar
             android:id="@+id/toolbar"
             android:layout_width="match_parent"
             android:layout_height="?attr/actionBarSize"
-            app:navigationIconTint="#000000"
-            app:titleTextColor="#000000" />
+            app:navigationIconTint="?attr/colorOnSurface"
+            app:titleTextColor="?attr/colorOnSurface" />
 
     </com.google.android.material.appbar.AppBarLayout>
 
@@ -39,7 +38,7 @@
         android:layout_width="match_parent"
         android:layout_height="56dp"
         android:layout_gravity="bottom"
-        android:background="#FFF0F0F0"
+        android:background="?attr/colorSurface"
         android:visibility="gone">
 
         <TextView
@@ -48,7 +47,7 @@
             android:layout_height="wrap_content"
             android:layout_gravity="center"
             android:text="0%"
-            android:textColor="#000000"
+            android:textColor="?attr/colorOnSurface"
             android:textStyle="bold" />
 
     </FrameLayout>

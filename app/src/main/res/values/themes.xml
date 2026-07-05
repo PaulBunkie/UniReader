@@ -1,15 +1,23 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
     <style name="Base.Theme.UniReader" parent="Theme.Material3.DayNight.NoActionBar">
-        <!-- System defaults that adapt to light/dark -->
+        <item name="panelBackgroundColor">@color/glass_light</item>
+        <item name="colorSurface">#F0F0F0</item>
+        <item name="colorOnSurface">#333333</item>
+        <item name="colorPrimary">?android:attr/textColorPrimary</item>
+        <item name="colorOnPrimary">?android:attr/colorBackground</item>
+        <item name="bottomSheetDialogTheme">@style/TransparentBottomSheetDialog</item>
     </style>
 
     <style name="Theme.UniReader" parent="Base.Theme.UniReader" />
 
-    <style name="TransparentBottomSheetDialog" parent="Theme.Design.Light.BottomSheetDialog">
+    <style name="TransparentBottomSheetDialog" parent="Theme.Material3.DayNight.BottomSheetDialog">
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:colorBackground">@android:color/transparent</item>
+        <item name="android:background">@android:color/transparent</item>
         <item name="bottomSheetStyle">@style/TransparentBottomSheetStyle</item>
     </style>
 
-    <style name="TransparentBottomSheetStyle" parent="Widget.Design.BottomSheet.Modal">
-        <item name="android:background">@android:color/transparent</item>
+    <style name="TransparentBottomSheetStyle" parent="Widget.Material3.BottomSheet.Modal">
+        <item name="backgroundTint">@android:color/transparent</item>
     </style>
 </resources>

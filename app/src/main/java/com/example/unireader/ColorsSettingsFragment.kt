@@ -4,6 +4,7 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import androidx.appcompat.app.AppCompatDelegate
 import androidx.fragment.app.Fragment
 import com.google.android.material.materialswitch.MaterialSwitch
 
@@ -21,8 +22,11 @@ class ColorsSettingsFragment : Fragment() {
         
         switchDarkMode.setOnCheckedChangeListener { _, isChecked ->
             activity.settings.isDarkMode = isChecked
-            activity.applyCurrentSettings()
             activity.settings.save(activity)
+            
+            val mode = if (isChecked) AppCompatDelegate.MODE_NIGHT_YES 
+                       else AppCompatDelegate.MODE_NIGHT_NO
+            AppCompatDelegate.setDefaultNightMode(mode)
         }
     }
 }

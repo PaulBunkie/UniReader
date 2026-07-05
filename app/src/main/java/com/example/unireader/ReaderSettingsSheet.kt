@@ -12,13 +12,8 @@ import com.google.android.material.tabs.TabLayoutMediator
 
 class ReaderSettingsSheet : BottomSheetDialogFragment() {
 
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        setStyle(STYLE_NORMAL, R.style.TransparentBottomSheetDialog)
-    }
-
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View? {
-        // Use direct inflation instead of synthetic reference which seems to be failing build
+        // No setStyle call here - use the global theme from ReaderActivity
         return inflater.inflate(R.layout.dialog_reader_settings, container, false)
     }
 

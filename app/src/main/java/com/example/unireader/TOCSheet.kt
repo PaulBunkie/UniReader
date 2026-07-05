@@ -12,6 +12,7 @@ import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 class TOCSheet(private val toc: List<TocItem>, private val onItemClick: (String) -> Unit) : BottomSheetDialogFragment() {
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View? {
+        // Use the global theme, no manual setStyle needed
         return inflater.inflate(R.layout.dialog_toc, container, false)
     }
 
