@@ -512,7 +512,10 @@ class ReaderActivity : AppCompatActivity() {
             }
             override fun onPageFinished(view: WebView?, url: String?) { 
                 applyCurrentSettings()
-                injectIndexingScript()
+                // Only inject indexing in paged mode; seamless mode indexes per-section in appendChapter/prependChapter
+                if (isPagedMode) {
+                    injectIndexingScript()
+                }
                 
                 if (shouldJumpToLastPage) {
                     executeJumpToLastPage()
@@ -685,6 +688,10 @@ class ReaderActivity : AppCompatActivity() {
                     }
                     
                     window.addEventListener('load', function() {
+                        // Index elements BEFORE attempting restore
+                        var items = document.querySelectorAll('p, h1, h2, h3, h4, h5, h6, li, img');
+                        for (var i = 0; i < items.length; i++) items[i].setAttribute('data-idx', i);
+                        
                         if ($targetIdx >= 0) {
                             var retry = 0;
                             function sync() {
