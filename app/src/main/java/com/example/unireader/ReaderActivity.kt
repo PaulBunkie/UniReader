@@ -302,7 +302,8 @@ class ReaderActivity : AppCompatActivity() {
         val density = resources.displayMetrics.density
         val pl = (settings.paddingLeft * density).toInt()
         val pr = (settings.paddingRight * density).toInt()
-        val pt = (settings.paddingTop * density).toInt()
+        // Top margin ONLY applies in fullscreen mode; always 0 in normal mode
+        val pt = if (isFullscreenPref) (settings.paddingTop * density).toInt() else 0
         val pb = (settings.paddingBottom * density).toInt()
         
         webViewContainer.setPadding(pl, pt, pr, pb)
@@ -432,6 +433,7 @@ class ReaderActivity : AppCompatActivity() {
         }
         
         webViewContainer.layoutParams = params
+        updateWebViewPadding()
         applyCurrentSettings()
     }
 
