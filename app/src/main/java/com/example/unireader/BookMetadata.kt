@@ -6,5 +6,6 @@ data class BookMetadata(
     val author: String,
     var lastSpineIndex: Int = 0,
     var lastElementIndex: Int = -1,
-    var lastAnchor: String? = null
+    var lastAnchor: String? = null,
+    var lastCharOffset: Int = -1
 )

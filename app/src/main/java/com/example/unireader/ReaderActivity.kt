@@ -54,6 +54,7 @@ class ReaderActivity : AppCompatActivity() {
     
     // High-precision Element Index
     private var pendingElementIndex = -1
+    private var pendingCharOffset = -1
     private var pendingAnchor: String? = null
 
     lateinit var settings: ReaderSettings
@@ -103,6 +104,7 @@ class ReaderActivity : AppCompatActivity() {
         val uriString = savedInstanceState?.getString("epub_uri") ?: intent.getStringExtra("epub_uri")
         currentSpineIndex = savedInstanceState?.getInt("spine_index", 0) ?: 0
         pendingElementIndex = savedInstanceState?.getInt("element_index", -1) ?: -1
+        pendingCharOffset = savedInstanceState?.getInt("char_offset", -1) ?: -1
         pendingAnchor = savedInstanceState?.getString("anchor")
         isFullscreenPref = savedInstanceState?.getBoolean("fullscreen", false) ?: false
         isUiOverlayVisible = savedInstanceState?.getBoolean("ui_visible", true) ?: !isFullscreenPref
@@ -121,6 +123,7 @@ class ReaderActivity : AppCompatActivity() {
                     if (savedBook != null) {
                         currentSpineIndex = savedBook.lastSpineIndex
                         pendingElementIndex = savedBook.lastElementIndex
+                        pendingCharOffset = savedBook.lastCharOffset
                         pendingAnchor = savedBook.lastAnchor
                     }
                 }
@@ -138,6 +141,7 @@ class ReaderActivity : AppCompatActivity() {
         intent.getStringExtra("epub_uri")?.let { outState.putString("epub_uri", it) }
         outState.putInt("spine_index", currentSpineIndex)
         outState.putInt("element_index", pendingElementIndex)
+        outState.putInt("char_offset", pendingCharOffset)
         outState.putString("anchor", pendingAnchor)
         outState.putBoolean("fullscreen", isFullscreenPref)
         outState.putBoolean("ui_visible", isUiOverlayVisible)
@@ -190,9 +194,10 @@ class ReaderActivity : AppCompatActivity() {
     fun setReadingMode(paged: Boolean) {
         if (isPagedMode == paged) return
         
-        captureCurrentElementIndex { idx ->
+        captureCurrentPosition { pos ->
             isPagedMode = paged
-            pendingElementIndex = idx
+            pendingElementIndex = pos.first
+            pendingCharOffset = pos.second
             
             if (!isPagedMode) {
                 initSeamlessScroll()
@@ -210,31 +215,86 @@ class ReaderActivity : AppCompatActivity() {
 
     private fun saveReadingPosition() {
         val uri = intent.getStringExtra("epub_uri") ?: return
-        captureCurrentElementIndex { idx ->
+        captureCurrentPosition { pos ->
             val libraryProvider = LibraryProvider(this)
-            libraryProvider.updateBookProgress(uri, currentSpineIndex, idx, null)
+            libraryProvider.updateBookProgress(uri, currentSpineIndex, pos.first, pos.second, null)
         }
     }
 
-    private fun captureCurrentElementIndex(onCaptured: (Int) -> Unit) {
+    private fun captureCurrentPosition(onCaptured: (Pair<Int, Int>) -> Unit) {
         val js = """
             (function() {
-                var pw = document.documentElement.clientWidth || window.innerWidth;
-                var el = null;
-                for (var y = 100; y < 800; y += 20) {
+                function getTextOffset(node, target) {
+                    var offset = 0;
+                    var walker = document.createTreeWalker(target, NodeFilter.SHOW_TEXT, null, false);
+                    while (walker.nextNode()) {
+                        if (walker.currentNode === node) break;
+                        offset += walker.currentNode.textContent.length;
+                    }
+                    return offset;
+                }
+
+                var pw = window.innerWidth;
+                var sl = window.pageXOffset || 0;
+                var mode = document.body.getAttribute('data-mode') || 'scroll';
+                
+                // For paged mode, we scan the viewport
+                var startY = 60; 
+                var endY = 500;
+                
+                for (var y = startY; y < endY; y += 40) {
                     var found = document.elementFromPoint(pw / 2, y);
-                    if (found) {
-                        var target = found.closest('p, h1, h2, h3, h4, h5, h6, li, img');
-                        if (target && target.hasAttribute('data-idx')) {
-                            return parseInt(target.getAttribute('data-idx'));
+                    if (!found) continue;
+                    
+                    var target = found.closest('p, h1, h2, h3, h4, h5, h6, li, img');
+                    if (!target || !target.hasAttribute('data-idx')) continue;
+                    
+                    if (target.tagName.toLowerCase() === 'img') {
+                        return JSON.stringify({idx: parseInt(target.getAttribute('data-idx')), offset: -1});
+                    }
+                    
+                    // Precise line detection using Range API
+                    var range = document.caretRangeFromPoint(pw / 2, y);
+                    if (range) {
+                        var node = range.startContainer;
+                        var localOffset = range.startOffset;
+                        
+                        // We want the start of the LINE containing this point
+                        var lineRange = document.createRange();
+                        lineRange.setStart(node, localOffset);
+                        lineRange.setEnd(node, localOffset);
+                        var rects = lineRange.getClientRects();
+                        if (rects.length > 0) {
+                            var targetLeft = rects[0].left;
+                            // Search backwards in the same node to find where the line starts
+                            var searchOffset = localOffset;
+                            while (searchOffset > 0) {
+                                lineRange.setStart(node, searchOffset - 1);
+                                lineRange.setEnd(node, searchOffset);
+                                var r = lineRange.getClientRects();
+                                if (r.length > 0 && Math.abs(r[0].left - targetLeft) > 10) {
+                                    // Found a break or significant shift
+                                    break;
+                                }
+                                searchOffset--;
+                            }
+                            localOffset = searchOffset;
                         }
+
+                        var globalOffset = getTextOffset(node, target) + localOffset;
+                        return JSON.stringify({idx: parseInt(target.getAttribute('data-idx')), offset: globalOffset});
                     }
                 }
-                return -1;
+                return JSON.stringify({idx: -1, offset: -1});
             })();
         """.trimIndent()
         webView.evaluateJavascript(js) {
-            onCaptured(it.toIntOrNull() ?: -1)
+            try {
+                val json = org.json.JSONObject(it.trim('"').replace("\\\"", "\""))
+                onCaptured(Pair(json.optInt("idx", -1), json.optInt("offset", -1)))
+            } catch (e: Exception) {
+                onCaptured(Pair(-1, -1))
+            }
         }
     }
 
@@ -566,12 +626,76 @@ class ReaderActivity : AppCompatActivity() {
         val isDarkMode = settings.isDarkMode
         val bgColor = if (isDarkMode) "#121212" else "#FFFFFF"
 
+        val targetIdx = pendingElementIndex
+        val targetOffset = pendingCharOffset
+        pendingElementIndex = -1
+        pendingCharOffset = -1
+
         val wrappedHtml = """
             <!DOCTYPE html>
             <html ${if (content.lang != null) "lang=\"${content.lang}\"" else ""} style="background-color: $bgColor;">
             <head>
                 <style id="reader-style"></style>
                 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+                <script>
+                    function restorePosition(idx, offset) {
+                        var target = document.querySelector('[data-idx="' + idx + '"]');
+                        if (!target) return;
+                        
+                        var pw = window.innerWidth;
+                        
+                        if (offset <= 0) {
+                            var rect = target.getBoundingClientRect();
+                            var page = Math.floor((window.pageXOffset + rect.left) / pw);
+                            window.scrollTo(page * pw, 0);
+                            return;
+                        }
+                        
+                        // Find node and local offset
+                        var current = 0;
+                        var foundNode = null;
+                        var localOffset = 0;
+                        var walker = document.createTreeWalker(target, NodeFilter.SHOW_TEXT, null, false);
+                        while (walker.nextNode()) {
+                            var len = walker.currentNode.textContent.length;
+                            if (current + len >= offset) {
+                                foundNode = walker.currentNode;
+                                localOffset = offset - current;
+                                break;
+                            }
+                            current += len;
+                        }
+                        
+                        if (foundNode) {
+                            var range = document.createRange();
+                            range.setStart(foundNode, localOffset);
+                            range.setEnd(foundNode, Math.min(localOffset + 1, foundNode.textContent.length));
+                            var rects = range.getClientRects();
+                            if (rects.length > 0) {
+                                var rect = rects[0];
+                                var page = Math.floor((window.pageXOffset + rect.left) / pw);
+                                window.scrollTo(page * pw, 0);
+                            }
+                        }
+                    }
+                    
+                    window.addEventListener('load', function() {
+                        if ($targetIdx >= 0) {
+                            var retry = 0;
+                            function sync() {
+                                var sw = document.documentElement.scrollWidth;
+                                var pw = window.innerWidth;
+                                if (sw > pw || retry > 50) {
+                                    restorePosition($targetIdx, $targetOffset);
+                                } else {
+                                    retry++;
+                                    setTimeout(sync, 50);
+                                }
+                            }
+                            sync();
+                        }
+                    });
+                </script>
             </head>
             <body data-mode="paged" style="margin: 0 !important; padding: 0 !important; background-color: $bgColor !important;">
                 ${content.html}
@@ -618,7 +742,7 @@ class ReaderActivity : AppCompatActivity() {
                         }
                     });
 
-                    function appendChapter(index, html, targetIdx, lang) {
+                    function appendChapter(index, html, targetIdx, targetOffset, lang) {
                         var container = document.getElementById('chapters-container');
                         if (document.getElementById('chapter-' + index)) return;
                         
@@ -648,7 +772,34 @@ class ReaderActivity : AppCompatActivity() {
                             function syncIdxScroll() {
                                 var target = section.querySelector('[data-idx="' + targetIdx + '"]');
                                 if (target || retry > 40) {
-                                    if (target) window.scrollTo(0, target.offsetTop);
+                                    if (target) {
+                                        if (targetOffset <= 0) {
+                                            window.scrollTo(0, target.offsetTop);
+                                        } else {
+                                            var current = 0;
+                                            var foundNode = null;
+                                            var localOffset = 0;
+                                            var walker = document.createTreeWalker(target, NodeFilter.SHOW_TEXT, null, false);
+                                            while (walker.nextNode()) {
+                                                var len = walker.currentNode.textContent.length;
+                                                if (current + len >= targetOffset) {
+                                                    foundNode = walker.currentNode;
+                                                    localOffset = targetOffset - current;
+                                                    break;
+                                                }
+                                                current += len;
+                                            }
+                                            if (foundNode) {
+                                                var range = document.createRange();
+                                                range.setStart(foundNode, localOffset);
+                                                range.setEnd(foundNode, Math.min(localOffset + 1, foundNode.textContent.length));
+                                                var rect = range.getBoundingClientRect();
+                                                window.scrollTo(0, window.pageYOffset + rect.top - 60);
+                                            } else {
+                                                window.scrollTo(0, target.offsetTop);
+                                            }
+                                        }
+                                    }
                                 } else {
                                     retry++;
                                     setTimeout(syncIdxScroll, 50);
@@ -696,18 +847,20 @@ class ReaderActivity : AppCompatActivity() {
         firstPrependedIndex = Int.MAX_VALUE
         isChapterLoading = false
         val idxToUse = pendingElementIndex
+        val offsetToUse = pendingCharOffset
         pendingElementIndex = -1
+        pendingCharOffset = -1
         
         webView.loadDataWithBaseURL("epub://seamless/", html, "text/html", "UTF-8", null)
         
         webView.postDelayed({
             loadAndPrependChapter(currentSpineIndex - 1)
-            loadAndAppendChapter(currentSpineIndex, idxToUse)
+            loadAndAppendChapter(currentSpineIndex, idxToUse, offsetToUse)
             loadAndAppendChapter(currentSpineIndex + 1)
         }, 500)
     }
 
-    private fun loadAndAppendChapter(index: Int, targetIdx: Int = -1) {
+    private fun loadAndAppendChapter(index: Int, targetIdx: Int = -1, targetOffset: Int = -1) {
         val loader = chapterLoader ?: return
         if (index < 0 || index >= (epubBook?.spine?.size ?: 0) || index <= lastAppendedIndex) return
         
@@ -722,7 +875,7 @@ class ReaderActivity : AppCompatActivity() {
         
         val escapedHtml = content.html.replace("`", "\\`").replace("${"$"}", "\\$")
         val langArg = if (content.lang != null) "'${content.lang}'" else "null"
-        webView.evaluateJavascript("appendChapter($index, `$escapedHtml`, $targetIdx, $langArg);") {
+        webView.evaluateJavascript("appendChapter($index, `$escapedHtml`, $targetIdx, $targetOffset, $langArg);") {
             isChapterLoading = false
         }
     }

@@ -19,7 +19,8 @@ class LibraryProvider(private val context: Context) {
                 author = obj.getString("author"),
                 lastSpineIndex = obj.optInt("lastSpineIndex", 0),
                 lastElementIndex = obj.optInt("lastElementIndex", -1),
-                lastAnchor = obj.optString("lastAnchor", null)
+                lastAnchor = obj.optString("lastAnchor", null),
+                lastCharOffset = obj.optInt("lastCharOffset", -1)
             ))
         }
         return list
@@ -32,12 +33,13 @@ class LibraryProvider(private val context: Context) {
         saveBooks(books)
     }
 
-    fun updateBookProgress(uri: String, spineIndex: Int, elementIndex: Int, anchor: String?) {
+    fun updateBookProgress(uri: String, spineIndex: Int, elementIndex: Int, charOffset: Int, anchor: String?) {
         val books = getBooks()
         val book = books.find { it.uri == uri }
         if (book != null) {
             book.lastSpineIndex = spineIndex
             book.lastElementIndex = elementIndex
+            book.lastCharOffset = charOffset
             book.lastAnchor = anchor
             saveBooks(books)
         }
@@ -52,6 +54,7 @@ class LibraryProvider(private val context: Context) {
             obj.put("author", book.author)
             obj.put("lastSpineIndex", book.lastSpineIndex)
             obj.put("lastElementIndex", book.lastElementIndex)
+            obj.put("lastCharOffset", book.lastCharOffset)
             obj.put("lastAnchor", book.lastAnchor)
             array.put(obj)
         }
