@@ -315,10 +315,11 @@ class ReaderActivity : AppCompatActivity() {
 
     fun applyCurrentSettings() {
         val isDarkMode = settings.isDarkMode
-        val bgColor = if (isDarkMode) "#121212" else "#FFFFFF"
+        val bgColor = if (isDarkMode) "#000000" else "#FFFFFF"
         val textColor = if (isDarkMode) "#E0E0E0" else "#000000"
         
-        webView.setBackgroundColor(if (isDarkMode) 0xFF121212.toInt() else 0xFFFFFFFF.toInt())
+        webView.setBackgroundColor(if (isDarkMode) 0xFF000000.toInt() else 0xFFFFFFFF.toInt())
+        findViewById<CoordinatorLayout>(R.id.readerRoot)?.setBackgroundColor(if (isDarkMode) 0xFF000000.toInt() else 0xFFFFFFFF.toInt())
 
         val commonCss = """
             body { 
@@ -637,7 +638,7 @@ class ReaderActivity : AppCompatActivity() {
         val content = loader.loadChapterHtml(currentSpineIndex) ?: return
         
         val isDarkMode = settings.isDarkMode
-        val bgColor = if (isDarkMode) "#121212" else "#FFFFFF"
+        val bgColor = if (isDarkMode) "#000000" else "#FFFFFF"
 
         val targetIdx = pendingElementIndex
         val targetOffset = pendingCharOffset
@@ -724,7 +725,7 @@ class ReaderActivity : AppCompatActivity() {
 
     private fun initSeamlessScroll() {
         val isDarkMode = settings.isDarkMode
-        val bgColor = if (isDarkMode) "#121212" else "#FFFFFF"
+        val bgColor = if (isDarkMode) "#000000" else "#FFFFFF"
         
         val html = """
             <!DOCTYPE html>
