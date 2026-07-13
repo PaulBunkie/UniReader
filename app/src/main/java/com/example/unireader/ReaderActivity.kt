@@ -378,15 +378,18 @@ class ReaderActivity : AppCompatActivity() {
             }
             """.trimIndent()
         } else {
+            val halfGapPx = (settings.columnGap * resources.displayMetrics.density).toInt() / 2
             """
             html, body { overflow-x: hidden !important; overflow-y: auto !important; height: auto !important; }
             body { 
                 visibility: visible;
                 display: block !important;
             } 
-            p, div, h1, h2, h3, h4, h5, h6 { 
+            p, h1, h2, h3, h4, h5, h6, li { 
                 margin-top: 0; 
                 margin-bottom: ${settings.paragraphSpacing}em !important; 
+                padding-left: ${halfGapPx}px !important;
+                padding-right: ${halfGapPx}px !important;
             }
             """.trimIndent()
         }
