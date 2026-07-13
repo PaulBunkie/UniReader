@@ -154,5 +154,40 @@
             app:thumbColor="?attr/colorAccent"
             android:layout_marginTop="-4dp" />
 
+        <!-- Column Gap -->
+        <RelativeLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="@android:color/transparent"
+            android:layout_marginTop="12dp">
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Column Gap"
+                android:textColor="?attr/colorOnSurface"
+                android:textSize="14sp"
+                android:textStyle="bold" />
+            <TextView
+                android:id="@+id/tvColumnGapValue"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_alignParentEnd="true"
+                android:text="0"
+                android:textColor="?attr/colorOnSurfaceVariant"
+                android:textSize="13sp" />
+        </RelativeLayout>
+        <com.google.android.material.slider.Slider
+            android:id="@+id/sliderColumnGap"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="@android:color/transparent"
+            android:stepSize="1"
+            android:valueFrom="0"
+            android:valueTo="32"
+            app:labelBehavior="gone"
+            app:trackColorActive="?attr/colorAccent"
+            app:thumbColor="?attr/colorAccent"
+            android:layout_marginTop="-4dp" />
+
     </LinearLayout>
 </androidx.core.widget.NestedScrollView>

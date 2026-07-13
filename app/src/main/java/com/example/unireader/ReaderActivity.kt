@@ -348,6 +348,8 @@ class ReaderActivity : AppCompatActivity() {
 
         val modeCss = if (isPagedMode) {
             val snapType = if (currentSpineIndex == 0) "none" else "x mandatory"
+            val gapPx = (settings.columnGap * resources.displayMetrics.density).toInt()
+            val colWidth = "calc(100vw - ${gapPx}px)"
             """
             html { 
                 margin: 0; padding: 0; height: 100vh; width: 100vw; 
@@ -358,8 +360,8 @@ class ReaderActivity : AppCompatActivity() {
             body { 
                 height: 100vh; width: 100vw;
                 display: block; position: relative;
-                -webkit-column-width: 100vw !important; -webkit-column-gap: 0 !important;
-                column-width: 100vw !important; column-gap: 0 !important;
+                -webkit-column-width: $colWidth !important; -webkit-column-gap: ${gapPx}px !important;
+                column-width: $colWidth !important; column-gap: ${gapPx}px !important;
                 -webkit-column-fill: auto; column-fill: auto;
             }
             section, div, p, h1, h2, h3, h4, h5, h6 { 

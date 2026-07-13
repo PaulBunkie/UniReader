@@ -10,6 +10,7 @@ data class ReaderSettings(
     var paragraphSpacing: Float = 0.0f,
     var lineHeight: Float = 1.6f,
     var firstLineIndent: Float = 0.0f,
+    var columnGap: Int = 0,
     var paddingLeft: Int = 10,
     var paddingRight: Int = 10,
     var paddingTop: Int = 0,
@@ -29,6 +30,7 @@ data class ReaderSettings(
                 paragraphSpacing = prefs.getFloat("paragraphSpacing", 0.0f),
                 lineHeight = prefs.getFloat("lineHeight", 1.6f),
                 firstLineIndent = prefs.getFloat("firstLineIndent", 0.0f),
+                columnGap = prefs.getInt("columnGap", 0),
                 paddingLeft = prefs.getInt("paddingLeft", 10),
                 paddingRight = prefs.getInt("paddingRight", 10),
                 paddingTop = prefs.getInt("paddingTop", 0),
@@ -48,6 +50,7 @@ data class ReaderSettings(
         editor.putFloat("paragraphSpacing", paragraphSpacing)
         editor.putFloat("lineHeight", lineHeight)
         editor.putFloat("firstLineIndent", firstLineIndent)
+        editor.putInt("columnGap", columnGap)
         editor.putInt("paddingLeft", paddingLeft)
         editor.putInt("paddingRight", paddingRight)
         editor.putInt("paddingTop", paddingTop)

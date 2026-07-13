@@ -83,5 +83,22 @@ class ReaderSettingsFragment : Fragment() {
                 activity.settings.save(activity)
             }
         }
+
+        // Column Gap
+        val sliderColumnGap = view.findViewById<Slider>(R.id.sliderColumnGap)
+        val tvColumnGapValue = view.findViewById<TextView>(R.id.tvColumnGapValue)
+
+        sliderColumnGap.value = activity.settings.columnGap.toFloat()
+        tvColumnGapValue.text = activity.settings.columnGap.toString()
+
+        sliderColumnGap.addOnChangeListener { _, value, fromUser ->
+            val newGap = value.toInt()
+            tvColumnGapValue.text = newGap.toString()
+            if (fromUser) {
+                activity.settings.columnGap = newGap
+                activity.applyCurrentSettings()
+                activity.settings.save(activity)
+            }
+        }
     }
 }
