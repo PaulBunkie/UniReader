@@ -1,6 +1,7 @@
 package com.example.unireader
 
 import android.content.Context
+import androidx.core.content.edit
 
 data class ReaderSettings(
     var fontFamily: String = "sans-serif",
@@ -16,7 +17,8 @@ data class ReaderSettings(
     var paddingTop: Int = 0,
     var paddingBottom: Int = 0,
     var isDarkMode: Boolean = false,
-    var isPagedMode: Boolean = true
+    var isPagedMode: Boolean = true,
+    var brightness: Float = -1.0f
 ) {
     companion object {
         private const val PREFS_NAME = "reader_settings"
@@ -36,27 +38,29 @@ data class ReaderSettings(
                 paddingTop = prefs.getInt("paddingTop", 0),
                 paddingBottom = prefs.getInt("paddingBottom", 0),
                 isDarkMode = prefs.getBoolean("isDarkMode", false),
-                isPagedMode = prefs.getBoolean("isPagedMode", true)
+                isPagedMode = prefs.getBoolean("isPagedMode", true),
+                brightness = prefs.getFloat("brightness", -1.0f)
             )
         }
     }
     fun save(context: Context) {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val editor = prefs.edit()
-        editor.putString("fontFamily", fontFamily)
-        editor.putInt("fontSize", fontSize)
-        editor.putBoolean("isItalic", isItalic)
-        editor.putBoolean("isBold", isBold)
-        editor.putFloat("paragraphSpacing", paragraphSpacing)
-        editor.putFloat("lineHeight", lineHeight)
-        editor.putFloat("firstLineIndent", firstLineIndent)
-        editor.putInt("columnGap", columnGap)
-        editor.putInt("paddingLeft", paddingLeft)
-        editor.putInt("paddingRight", paddingRight)
-        editor.putInt("paddingTop", paddingTop)
-        editor.putInt("paddingBottom", paddingBottom)
-        editor.putBoolean("isDarkMode", isDarkMode)
-        editor.putBoolean("isPagedMode", isPagedMode)
-        editor.commit() // Force immediate synchronous save
+        prefs.edit {
+            putString("fontFamily", fontFamily)
+            putInt("fontSize", fontSize)
+            putBoolean("isItalic", isItalic)
+            putBoolean("isBold", isBold)
+            putFloat("paragraphSpacing", paragraphSpacing)
+            putFloat("lineHeight", lineHeight)
+            putFloat("firstLineIndent", firstLineIndent)
+            putInt("columnGap", columnGap)
+            putInt("paddingLeft", paddingLeft)
+            putInt("paddingRight", paddingRight)
+            putInt("paddingTop", paddingTop)
+            putInt("paddingBottom", paddingBottom)
+            putBoolean("isDarkMode", isDarkMode)
+            putBoolean("isPagedMode", isPagedMode)
+            putFloat("brightness", brightness)
+        }
     }
 }

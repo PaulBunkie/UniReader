@@ -46,10 +46,22 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_gravity="center"
-            android:text="0%"
+            android:text="@string/progress_zero"
             android:textColor="?attr/colorOnSurface"
             android:textStyle="bold" />
 
     </FrameLayout>
+
+    <TextView
+        android:id="@+id/tvBrightnessHint"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:background="#AA000000"
+        android:padding="16dp"
+        android:textColor="#FFFFFF"
+        android:textSize="20sp"
+        android:visibility="gone"
+        android:elevation="10dp" />
 
 </androidx.coordinatorlayout.widget.CoordinatorLayout>

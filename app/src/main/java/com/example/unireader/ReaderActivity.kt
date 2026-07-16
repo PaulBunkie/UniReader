@@ -1,15 +1,14 @@
 package com.example.unireader
 
 import android.annotation.SuppressLint
-import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import android.view.GestureDetector
 import android.view.Menu
 import android.view.MenuItem
 import android.view.MotionEvent
 import android.view.View
-import android.view.ViewGroup
 import android.view.WindowManager
 import android.webkit.JavascriptInterface
 import android.webkit.WebResourceRequest
@@ -18,11 +17,12 @@ import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.TextView
+import androidx.annotation.Keep
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.appcompat.widget.Toolbar
 import androidx.coordinatorlayout.widget.CoordinatorLayout
-import androidx.core.view.GestureDetectorCompat
+import androidx.core.net.toUri
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -58,7 +58,12 @@ class ReaderActivity : AppCompatActivity() {
     private var pendingAnchor: String? = null
 
     lateinit var settings: ReaderSettings
-    private lateinit var gestureDetector: GestureDetectorCompat
+    private lateinit var gestureDetector: GestureDetector
+    private var isAdjustingBrightness = false
+    
+    private val hideBrightnessRunnable = Runnable { 
+        findViewById<View>(R.id.tvBrightnessHint)?.visibility = View.GONE 
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         settings = ReaderSettings.load(this)
@@ -71,6 +76,13 @@ class ReaderActivity : AppCompatActivity() {
 
         super.onCreate(savedInstanceState)
         
+        // APPLY SAVED BRIGHTNESS
+        if (settings.brightness >= 0f) {
+            val lp = window.attributes
+            lp.screenBrightness = settings.brightness
+            window.attributes = lp
+        }
+
         WindowCompat.setDecorFitsSystemWindows(window, false)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             window.attributes.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
@@ -110,7 +122,7 @@ class ReaderActivity : AppCompatActivity() {
         isUiOverlayVisible = savedInstanceState?.getBoolean("ui_visible", true) ?: !isFullscreenPref
 
         if (uriString != null) {
-            val uri = Uri.parse(uriString)
+            val uri = uriString.toUri()
             epubBook = EpubParser(this).parse(uri)
             epubBook?.let { book ->
                 chapterLoader = ChapterLoader(this, book)
@@ -132,7 +144,7 @@ class ReaderActivity : AppCompatActivity() {
             }
         }
 
-        updateUiState(animate = false)
+        updateUiState()
         updateWebViewPadding()
     }
 
@@ -292,7 +304,7 @@ class ReaderActivity : AppCompatActivity() {
             try {
                 val json = org.json.JSONObject(it.trim('"').replace("\\\"", "\""))
                 onCaptured(Pair(json.optInt("idx", -1), json.optInt("offset", -1)))
-            } catch (e: Exception) {
+            } catch (_: Exception) {
                 onCaptured(Pair(-1, -1))
             }
         }
@@ -399,7 +411,7 @@ class ReaderActivity : AppCompatActivity() {
         webView.evaluateJavascript("var style = document.getElementById('reader-style') || document.createElement('style'); style.id = 'reader-style'; style.innerHTML = '$finalCss'; if (!style.parentNode) document.head.appendChild(style);", null)
     }
 
-    fun updateUiState(animate: Boolean = true) {
+    fun updateUiState() {
         val windowInsetsController = WindowCompat.getInsetsController(window, window.decorView)
         val params = webViewContainer.layoutParams as CoordinatorLayout.LayoutParams
 
@@ -408,19 +420,19 @@ class ReaderActivity : AppCompatActivity() {
             params.topMargin = 0
             params.bottomMargin = 0
             if (!isUiOverlayVisible) {
-                windowInsetsController?.hide(WindowInsetsCompat.Type.systemBars())
-                windowInsetsController?.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                windowInsetsController.hide(WindowInsetsCompat.Type.systemBars())
+                windowInsetsController.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
                 appBarLayout.visibility = View.GONE
                 bottomPanel.visibility = View.GONE
             } else {
-                windowInsetsController?.show(WindowInsetsCompat.Type.systemBars())
+                windowInsetsController.show(WindowInsetsCompat.Type.systemBars())
                 appBarLayout.visibility = View.VISIBLE
                 bottomPanel.visibility = View.VISIBLE
                 appBarLayout.bringToFront()
                 bottomPanel.bringToFront()
             }
         } else {
-            windowInsetsController?.show(WindowInsetsCompat.Type.systemBars())
+            windowInsetsController.show(WindowInsetsCompat.Type.systemBars())
             isUiOverlayVisible = true
             appBarLayout.visibility = View.VISIBLE
             bottomPanel.visibility = View.VISIBLE
@@ -442,24 +454,85 @@ class ReaderActivity : AppCompatActivity() {
     }
 
     private fun setupGestures() {
-        gestureDetector = GestureDetectorCompat(this, object : GestureDetector.SimpleOnGestureListener() {
+        gestureDetector = GestureDetector(
+            this,
+            object : GestureDetector.SimpleOnGestureListener() {
+                override fun onDown(event: MotionEvent): Boolean {
+                isAdjustingBrightness = false
+                return true
+            }
+
             override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
                 val width = webView.width
                 val x = e.x
 
                 val hr = webView.hitTestResult
-                if (hr.type == WebView.HitTestResult.SRC_ANCHOR_TYPE || hr.type == WebView.HitTestResult.SRC_IMAGE_ANCHOR_TYPE) {
+                if ((hr.type == WebView.HitTestResult.SRC_ANCHOR_TYPE) || (hr.type == WebView.HitTestResult.SRC_IMAGE_ANCHOR_TYPE)) {
                     return false
                 }
 
                 when {
-                    x < width * 0.3 -> if (isPagedMode) prevPage()
-                    x > width * 0.7 -> if (isPagedMode) nextPage()
+                    (x < width * 0.3) -> if (isPagedMode) prevPage()
+                    (x > width * 0.7) -> if (isPagedMode) nextPage()
                     else -> if (isFullscreenPref) { isUiOverlayVisible = !isUiOverlayVisible; updateUiState() }
                 }
                 return true
             }
-        })
+
+            override fun onScroll(
+                e1: MotionEvent?,
+                e2: MotionEvent,
+                distanceX: Float,
+                distanceY: Float,
+            ): Boolean {
+                if (e1 == null) return false
+                val width = webView.width
+                
+                // Проверяем, начался ли жест в левых 8% экрана
+                if (e1.x < width * 0.08f) {
+                    if (!isAdjustingBrightness) {
+                        isAdjustingBrightness = true
+                        // Отменяем обработку жеста в WebView, чтобы не включалось выделение текста
+                        val cancelEvent = MotionEvent.obtain(e2.downTime, e2.eventTime, MotionEvent.ACTION_CANCEL, e2.x, e2.y, 0)
+                        webView.dispatchTouchEvent(cancelEvent)
+                        cancelEvent.recycle()
+                    }
+                    val lp = window.attributes
+                    var brightness = lp.screenBrightness
+                    
+                    if (brightness < 0) {
+                        // Если яркость окна не задана, берем системную, чтобы избежать скачка
+                        brightness = try {
+                            Settings.System.getInt(contentResolver, Settings.System.SCREEN_BRIGHTNESS) / 255f
+                        } catch (_: Exception) {
+                            0.5f
+                        }
+                    }
+                    
+                    // Уменьшаем чувствительность: делим на высоту * 1.5, чтобы свайп был более "вязким" и точным
+                    val delta = distanceY / (webView.height * 1.5f)
+                    brightness = (brightness + delta).coerceIn(0.01f, 1.0f)
+                    
+                    lp.screenBrightness = brightness
+                    window.attributes = lp
+                    
+                    settings.brightness = brightness
+                    settings.save(this@ReaderActivity)
+                    
+                    showBrightnessFeedback(brightness)
+                    return true
+                }
+                return false
+            }
+        },)
+    }
+
+    private fun showBrightnessFeedback(value: Float) {
+        val hint = findViewById<TextView>(R.id.tvBrightnessHint) ?: return
+        hint.removeCallbacks(hideBrightnessRunnable)
+        hint.text = getString(R.string.brightness_format, (value * 100).toInt())
+        hint.visibility = View.VISIBLE
+        hint.postDelayed(hideBrightnessRunnable, 1000)
     }
 
     @SuppressLint("SetJavaScriptEnabled", "ClickableViewAccessibility")
@@ -470,13 +543,17 @@ class ReaderActivity : AppCompatActivity() {
         webView.settings.domStorageEnabled = true
         
         webView.addJavascriptInterface(object {
+            @Keep
             @JavascriptInterface
+            @Suppress("unused")
             fun onLinkClicked(url: String) {
                 runOnUiThread {
                     handleInternalLink(url)
                 }
             }
+            @Keep
             @JavascriptInterface
+            @Suppress("unused")
             fun onReachedBottom() {
                 runOnUiThread { 
                     if (!isPagedMode && !isChapterLoading) {
@@ -484,7 +561,9 @@ class ReaderActivity : AppCompatActivity() {
                     }
                 }
             }
+            @Keep
             @JavascriptInterface
+            @Suppress("unused")
             fun onReachedTop() {
                 runOnUiThread {
                     if (!isPagedMode && !isChapterLoading) {
@@ -492,7 +571,9 @@ class ReaderActivity : AppCompatActivity() {
                     }
                 }
             }
+            @Keep
             @JavascriptInterface
+            @Suppress("unused")
             fun onChapterEntered(index: Int) {
                 runOnUiThread {
                     if (currentSpineIndex != index) {
@@ -502,7 +583,7 @@ class ReaderActivity : AppCompatActivity() {
                     }
                 }
             }
-        }, "AndroidReader")
+        }, "AndroidReader",)
 
         webView.webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
@@ -530,6 +611,18 @@ class ReaderActivity : AppCompatActivity() {
         }
         webView.setOnTouchListener { _, event ->
             val handled = gestureDetector.onTouchEvent(event)
+            
+            if (event.action == MotionEvent.ACTION_UP || event.action == MotionEvent.ACTION_CANCEL) {
+                isAdjustingBrightness = false
+            }
+
+            // Если мы регулируем яркость, перехватываем все события
+            if (isAdjustingBrightness) return@setOnTouchListener true
+            
+            // Для ACTION_DOWN возвращаем false, чтобы WebView могла обработать возможный клик
+            if (event.action == MotionEvent.ACTION_DOWN) return@setOnTouchListener false
+            
+            // В постраничном режиме блокируем прокрутку WebView, если жест обработан нами (тап по краям)
             if (isPagedMode) handled else false
         }
     }
@@ -891,7 +984,7 @@ class ReaderActivity : AppCompatActivity() {
         if (lastAppendedIndex == -1) firstPrependedIndex = index
         lastAppendedIndex = index
         
-        val escapedHtml = content.html.replace("`", "\\`").replace("${"$"}", "\\$")
+        val escapedHtml = content.html.replace("`", "\\`").replace("$", "\\$")
         val langArg = if (content.lang != null) "'${content.lang}'" else "null"
         webView.evaluateJavascript("appendChapter($index, `$escapedHtml`, $targetIdx, $targetOffset, $langArg);") {
             isChapterLoading = false
@@ -909,7 +1002,7 @@ class ReaderActivity : AppCompatActivity() {
         }
         
         firstPrependedIndex = index
-        val escapedHtml = content.html.replace("`", "\\`").replace("${"$"}", "\\$")
+        val escapedHtml = content.html.replace("`", "\\`").replace("$", "\\$")
         val langArg = if (content.lang != null) "'${content.lang}'" else "null"
         webView.evaluateJavascript("prependChapter($index, `$escapedHtml`, $langArg);") {
             isChapterLoading = false

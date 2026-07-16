@@ -11,6 +11,9 @@
     <string name="tab_styles">Styles</string>
     <string name="tab_colors">Colors</string>
     <string name="toc_title">Table of Contents</string>
+    <string name="progress_zero">0%%</string>
+    <string name="brightness_format">Яркость: %d%%</string>
+
 
     <string name="lorem_ipsum">
         Lorem ipsum dolor sit amet, consectetur adipiscing elit. Nam in scelerisque sem. Mauris
