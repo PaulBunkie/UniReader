@@ -698,16 +698,13 @@ class ReaderActivity : AppCompatActivity() {
                         var lastWidth = 0;
                         function sync() {
                             var target = document.getElementById('$fragment') || document.getElementsByName('$fragment')[0];
-                            var pw = document.documentElement.clientWidth || window.innerWidth;
+                            var pw = document.documentElement.getBoundingClientRect().width;
                             var sw = document.documentElement.scrollWidth;
                             if ((target && sw > pw && sw === lastWidth) || retry > 60) {
                                 if (target) {
                                     var rect = target.getBoundingClientRect();
-                                    var pw = window.innerWidth;
-                                    var sw = document.documentElement.scrollWidth;
-                                    var precisePw = sw / Math.round(sw / pw);
-                                    var pageIndex = Math.floor((window.pageXOffset + rect.left + 2) / precisePw);
-                                    window.scrollTo(pageIndex * precisePw, 0);
+                                    var pageIndex = Math.floor((window.pageXOffset + rect.left + 5) / pw);
+                                    window.scrollTo(pageIndex * pw, 0);
                                 }
                             } else {
                                 lastWidth = sw;
@@ -754,11 +751,11 @@ class ReaderActivity : AppCompatActivity() {
                         var target = document.querySelector('[data-idx="' + idx + '"]');
                         if (!target) return;
                         
-                        var pw = window.innerWidth;
+                        var pw = document.documentElement.getBoundingClientRect().width;
                         
                         if (offset <= 0) {
                             var rect = target.getBoundingClientRect();
-                            var page = Math.floor((window.pageXOffset + rect.left) / pw);
+                            var page = Math.floor((window.pageXOffset + rect.left + 5) / pw);
                             window.scrollTo(page * pw, 0);
                             return;
                         }
@@ -785,7 +782,7 @@ class ReaderActivity : AppCompatActivity() {
                             var rects = range.getClientRects();
                             if (rects.length > 0) {
                                 var rect = rects[0];
-                                var page = Math.floor((window.pageXOffset + rect.left) / pw);
+                                var page = Math.floor((window.pageXOffset + rect.left + 5) / pw);
                                 window.scrollTo(page * pw, 0);
                             }
                         }
@@ -800,7 +797,7 @@ class ReaderActivity : AppCompatActivity() {
                             var retry = 0;
                             function sync() {
                                 var sw = document.documentElement.scrollWidth;
-                                var pw = window.innerWidth;
+                                var pw = document.documentElement.getBoundingClientRect().width;
                                 if (sw > pw || retry > 50) {
                                     restorePosition($targetIdx, $targetOffset);
                                 } else {
@@ -811,28 +808,41 @@ class ReaderActivity : AppCompatActivity() {
                             sync();
                         }
 
+                        var anchor = ${if (pendingAnchor != null) "'$pendingAnchor'" else "null"};
+                        if (anchor) {
+                            var retryAnchor = 0;
+                            function syncAnchor() {
+                                var target = document.getElementById(anchor) || document.getElementsByName(anchor)[0];
+                                var pw = document.documentElement.getBoundingClientRect().width;
+                                var sw = document.documentElement.scrollWidth;
+                                if ((target && sw > pw) || retryAnchor > 60) {
+                                    if (target) {
+                                        var rect = target.getBoundingClientRect();
+                                        var pageIndex = Math.floor((window.pageXOffset + rect.left + 5) / pw);
+                                        window.scrollTo(pageIndex * pw, 0);
+                                    }
+                                } else {
+                                    retryAnchor++;
+                                    setTimeout(syncAnchor, 50);
+                                }
+                            }
+                            syncAnchor();
+                        }
+
                         // LINE-BASED MAGNET (Snap to Page)
                         var isSnapping = false;
                         var scrollTimeout;
                         function performSnap() {
                             if (isSnapping) return;
-                            var sw = document.documentElement.scrollWidth;
-                            var pw = window.innerWidth;
-                            var precisePw = sw / Math.round(sw / pw);
+                            var pw = document.documentElement.getBoundingClientRect().width;
                             var sl = window.pageXOffset;
-                            var range = document.caretRangeFromPoint(pw / 2, window.innerHeight / 2);
-                            var targetPage;
-                            if (range) {
-                                var rects = range.getClientRects();
-                                if (rects.length > 0) {
-                                    targetPage = Math.floor((sl + rects[0].left + 2) / precisePw);
-                                }
-                            }
-                            if (targetPage === undefined) targetPage = Math.round(sl / precisePw);
-                            if (Math.abs(sl - targetPage * precisePw) > 5) {
+                            var sw = document.documentElement.scrollWidth;
+                            
+                            var targetPage = Math.round(sl / pw);
+                            if (Math.abs(sl - targetPage * pw) > 1) {
                                 isSnapping = true;
-                                window.scrollTo({ left: targetPage * precisePw, behavior: 'smooth' });
-                                setTimeout(function() { isSnapping = false; }, 600);
+                                window.scrollTo({ left: targetPage * pw, behavior: 'smooth' });
+                                setTimeout(function() { isSnapping = false; }, 400);
                             }
                         }
 
@@ -1127,14 +1137,11 @@ class ReaderActivity : AppCompatActivity() {
         webView.evaluateJavascript("""
             (function() { 
                 var sw = document.documentElement.scrollWidth;
-                var pw = window.innerWidth;
-                var precisePw = sw / Math.round(sw / pw);
+                var pw = document.documentElement.getBoundingClientRect().width;
                 var sl = window.pageXOffset || document.documentElement.scrollLeft;
-                var currentPage = Math.round(sl / precisePw);
-                var nextScroll = (currentPage + 1) * precisePw;
                 
-                if (nextScroll + (precisePw / 2) < sw) { 
-                    window.scrollTo({ left: nextScroll, behavior: 'auto' }); 
+                if (sl + pw + 5 < sw) { 
+                    window.scrollTo({ left: (Math.round(sl / pw) + 1) * pw, behavior: 'auto' }); 
                     return 'ok'; 
                 } 
                 return 'next'; 
@@ -1150,14 +1157,11 @@ class ReaderActivity : AppCompatActivity() {
         if (!isPagedMode) return
         webView.evaluateJavascript("""
             (function() { 
-                var sw = document.documentElement.scrollWidth;
-                var pw = window.innerWidth;
-                var precisePw = sw / Math.round(sw / pw);
+                var pw = document.documentElement.getBoundingClientRect().width;
                 var sl = window.pageXOffset || document.documentElement.scrollLeft;
-                var currentPage = Math.round(sl / precisePw);
                 
-                if (currentPage > 0) { 
-                    window.scrollTo({ left: (currentPage - 1) * precisePw, behavior: 'auto' });
+                if (sl > 5) { 
+                    window.scrollTo({ left: (Math.round(sl / pw) - 1) * pw, behavior: 'auto' });
                     return 'ok'; 
                 } 
                 return 'prev'; 

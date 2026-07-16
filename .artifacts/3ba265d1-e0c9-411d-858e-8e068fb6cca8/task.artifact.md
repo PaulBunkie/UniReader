@@ -1,5 +1,4 @@
-- [x] Research: Verify `scrollend` support in Android WebView and alternatives
-- [x] Implement: Remove block-level snap points in `ReaderActivity.kt` (`applyCurrentSettings`)
-- [x] Implement: Add Range-based line snap logic in `initPagedView` JS injection
-- [x] Implement: Handle "scroll-to-page" logic during normal swipes
-- [x] Verify: Test with long paragraphs and ensure no "page skipping" or "between-page" hangs
+- [x] Implement: Use `Math.floor` and epsilon for internal links in `handleInternalLink`
+- [x] Implement: Use `Math.floor` and epsilon for `restorePosition` in `initPagedView`
+- [x] Implement: Use `Math.floor` and epsilon for `syncAnchor` in `initPagedView`
+- [x] Verify: Build and test link precision
