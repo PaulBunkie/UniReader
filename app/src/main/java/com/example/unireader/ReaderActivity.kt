@@ -354,13 +354,11 @@ class ReaderActivity : AppCompatActivity() {
         """.trimIndent()
 
         val modeCss = if (isPagedMode) {
-            val snapType = if (currentSpineIndex == 0) "none" else "x mandatory"
             val halfGapPx = (settings.columnGap * resources.displayMetrics.density).toInt() / 2
             """
             html { 
                 margin: 0; padding: 0; height: 100vh; width: 100vw; 
                 overflow-x: auto; overflow-y: hidden; 
-                scroll-snap-type: $snapType; 
                 -webkit-overflow-scrolling: touch;
             }
             body { 
@@ -369,10 +367,6 @@ class ReaderActivity : AppCompatActivity() {
                 -webkit-column-width: 100vw !important; -webkit-column-gap: 0 !important;
                 column-width: 100vw !important; column-gap: 0 !important;
                 -webkit-column-fill: auto; column-fill: auto;
-            }
-            section, div, p, h1, h2, h3, h4, h5, h6 { 
-                scroll-snap-align: start; 
-                scroll-snap-stop: always;
             }
             p, h1, h2, h3, h4, h5, h6, li { 
                 margin: 0 !important;
@@ -694,8 +688,11 @@ class ReaderActivity : AppCompatActivity() {
                             if ((target && sw > pw && sw === lastWidth) || retry > 60) {
                                 if (target) {
                                     var rect = target.getBoundingClientRect();
-                                    var pageIndex = Math.floor((window.pageXOffset + rect.left + 2) / pw);
-                                    window.scrollTo(pageIndex * pw, 0);
+                                    var pw = window.innerWidth;
+                                    var sw = document.documentElement.scrollWidth;
+                                    var precisePw = sw / Math.round(sw / pw);
+                                    var pageIndex = Math.floor((window.pageXOffset + rect.left + 2) / precisePw);
+                                    window.scrollTo(pageIndex * precisePw, 0);
                                 }
                             } else {
                                 lastWidth = sw;
@@ -798,6 +795,43 @@ class ReaderActivity : AppCompatActivity() {
                             }
                             sync();
                         }
+
+                        // LINE-BASED MAGNET (Snap to Page)
+                        var isSnapping = false;
+                        var scrollTimeout;
+                        function performSnap() {
+                            if (isSnapping) return;
+                            var sw = document.documentElement.scrollWidth;
+                            var pw = window.innerWidth;
+                            var precisePw = sw / Math.round(sw / pw);
+                            var sl = window.pageXOffset;
+                            var range = document.caretRangeFromPoint(pw / 2, window.innerHeight / 2);
+                            var targetPage;
+                            if (range) {
+                                var rects = range.getClientRects();
+                                if (rects.length > 0) {
+                                    targetPage = Math.floor((sl + rects[0].left + 2) / precisePw);
+                                }
+                            }
+                            if (targetPage === undefined) targetPage = Math.round(sl / precisePw);
+                            if (Math.abs(sl - targetPage * precisePw) > 5) {
+                                isSnapping = true;
+                                window.scrollTo({ left: targetPage * precisePw, behavior: 'smooth' });
+                                setTimeout(function() { isSnapping = false; }, 600);
+                            }
+                        }
+
+                        window.addEventListener('scroll', function() {
+                            if (isSnapping) return;
+                            clearTimeout(scrollTimeout);
+                            scrollTimeout = setTimeout(performSnap, 200);
+                        }, { passive: true });
+
+                        window.addEventListener('touchend', function() {
+                            if (isSnapping) return;
+                            clearTimeout(scrollTimeout);
+                            scrollTimeout = setTimeout(performSnap, 60);
+                        }, { passive: true });
                     });
                 </script>
             </head>
@@ -1073,15 +1107,14 @@ class ReaderActivity : AppCompatActivity() {
         if (!isPagedMode) return
         webView.evaluateJavascript("""
             (function() { 
-                var pw = window.innerWidth;
-                var sl = window.pageXOffset || document.documentElement.scrollLeft;
                 var sw = document.documentElement.scrollWidth;
-                var currentPage = Math.round(sl / pw);
-                var nextScroll = (currentPage + 1) * pw;
+                var pw = window.innerWidth;
+                var precisePw = sw / Math.round(sw / pw);
+                var sl = window.pageXOffset || document.documentElement.scrollLeft;
+                var currentPage = Math.round(sl / precisePw);
+                var nextScroll = (currentPage + 1) * precisePw;
                 
-                // Если следующая страница начинается слишком близко к концу (менее чем пол-экрана запаса),
-                // значит пора переходить к следующей главе. Это решает проблему "математической стены".
-                if (nextScroll + (pw / 2) < sw) { 
+                if (nextScroll + (precisePw / 2) < sw) { 
                     window.scrollTo({ left: nextScroll, behavior: 'auto' }); 
                     return 'ok'; 
                 } 
@@ -1098,12 +1131,14 @@ class ReaderActivity : AppCompatActivity() {
         if (!isPagedMode) return
         webView.evaluateJavascript("""
             (function() { 
+                var sw = document.documentElement.scrollWidth;
                 var pw = window.innerWidth;
+                var precisePw = sw / Math.round(sw / pw);
                 var sl = window.pageXOffset || document.documentElement.scrollLeft;
-                var currentPage = Math.round(sl / pw);
+                var currentPage = Math.round(sl / precisePw);
                 
                 if (currentPage > 0) { 
-                    window.scrollTo({ left: (currentPage - 1) * pw, behavior: 'auto' });
+                    window.scrollTo({ left: (currentPage - 1) * precisePw, behavior: 'auto' });
                     return 'ok'; 
                 } 
                 return 'prev'; 
