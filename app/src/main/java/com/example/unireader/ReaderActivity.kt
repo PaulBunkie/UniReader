@@ -821,16 +821,20 @@ class ReaderActivity : AppCompatActivity() {
                             }
                         }
 
+                        if ('onscrollend' in window) {
+                            window.addEventListener('scrollend', performSnap);
+                        }
+                        
                         window.addEventListener('scroll', function() {
                             if (isSnapping) return;
                             clearTimeout(scrollTimeout);
-                            scrollTimeout = setTimeout(performSnap, 200);
+                            scrollTimeout = setTimeout(performSnap, 50);
                         }, { passive: true });
 
                         window.addEventListener('touchend', function() {
                             if (isSnapping) return;
                             clearTimeout(scrollTimeout);
-                            scrollTimeout = setTimeout(performSnap, 60);
+                            scrollTimeout = setTimeout(performSnap, 20);
                         }, { passive: true });
                     });
                 </script>
