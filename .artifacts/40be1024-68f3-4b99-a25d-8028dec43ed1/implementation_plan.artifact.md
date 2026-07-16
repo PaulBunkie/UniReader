@@ -1,38 +1,36 @@
-# Implementation Plan - Native CSS Scroll Snap with Simulated Paging Gap
+# Implementation Plan - Fix Progress and Links in Paged Mode
 
-This plan integrates native CSS Scroll Snap into the WebView reader while strictly preserving the existing "padding-based" column gap logic. It also fixes the progress panel lag by making detection autonomous in JavaScript.
+The recent paging improvements caused regressions in page counting and internal link navigation. This plan fixes these by using robust coordinate detection that works correctly with CSS Columns on the `body` element.
 
 ## User Review Required
 
 > [!IMPORTANT]
-> - **Zero Layout Changes**: We will keep `column-gap: 0` and use the existing `padding` on elements to simulate the gap. This ensures the document width remains a clean multiple of `100vw`.
-> - **Native Snapping**: The manual JavaScript "magnet" logic will be replaced with `scroll-snap-type: x mandatory`.
-> - **Autonomous Progress**: The progress panel will now be driven by JS detecting the visible chapter, eliminating the lag when crossing section boundaries.
+> - **Page Counting Fix**: Since columns are on the `body`, `section.scrollWidth` is not reliable. We will use `section.getClientRects().length` to accurately count pages in a chapter.
+> - **Link Navigation Fix**: We will update the link/anchor scrolling logic to accurately calculate the target page index regardless of how many chapters are loaded.
+> - **Padding Cleanup**: We will ensure paddings don't interfere with coordinate calculations.
 
 ## Proposed Changes
 
-### Reader UI (WebView Styling & Logic)
+### Reader UI (WebView Logic)
 
 #### [MODIFY] [ReaderActivity.kt](file:///C:/Users/Владелец/AndroidStudioProjects/UniReader/app/src/main/java/com/example/unireader/ReaderActivity.kt)
 
-- **Update `applyCurrentSettings`**:
-    - Add `scroll-snap-type: x mandatory;` and `overflow-x: auto;` to the `html` tag.
-    - Add styles for the invisible `#snap-ribbon` and `.snap-point` markers.
-    - Preserve the `column-gap: 0` and `padding` logic for text elements.
-- **Update `initPagedView`**:
-    - Add `<div id="snap-ribbon"></div>` to the body.
-    - Implement `updateSnapMarkers()` in JavaScript to populate the ribbon based on `scrollWidth / clientWidth`.
-    - Trigger `updateSnapMarkers()` in `appendChapter`, `prependChapter`, and on `resize`.
-    - **Remove** the old manual `performSnap()` and its associated scroll listener logic.
 - **Update `updateProgress`**:
-    - Modify the injected JS to autonomously find the active `<section>` by checking `getBoundingClientRect().left`.
-    - Return the actual section index (`data-index`) to Kotlin.
-    - Update `currentSpineIndex` and the UI based on the detected index.
+    - Use `active.getClientRects()` to get the total number of pages in the current chapter.
+    - Calculate `currPage` by comparing `window.pageXOffset` with the first rect's `left` coordinate.
+    - This ensures the "Page X of Y" is always accurate.
+
+- **Update `handleInternalLink` / Anchor Sync**:
+    - Improve the `sync()` function for internal links.
+    - Use `target.getClientRects()[0]` or `getBoundingClientRect()` relative to the document to find the exact page.
+    - Ensure `window.scrollTo` hits the exact multiple of `pw`.
+
+- **CSS Tweak**:
+    - Remove the redundant `section` padding that might be double-applying or shifting the chapter start.
 
 ## Verification Plan
 
 ### Manual Verification
-- Verify horizontal paging feels smooth and "snaps" perfectly to page boundaries.
-- Verify that changing font size or screen orientation updates the snapping points correctly.
-- Verify the bottom progress panel ("Section X/Y") updates immediately as soon as a new chapter enters the view.
-- Verify no visual changes to text paddings or margins.
+- **Page Counting**: Swipe through chapters and verify "Page X of Y" updates correctly (e.g., 1/5, 2/5...).
+- **Internal Links**: Click a link in the TOC and verify it jumps to the correct page in the correct chapter.
+- **Anchors**: Verify that jumping to a specific footnote or chapter part works across chapter boundaries.

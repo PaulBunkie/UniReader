@@ -257,8 +257,15 @@ class ReaderActivity : AppCompatActivity() {
                     if (!active) return JSON.stringify({curr: 1, total: 1, idx: $currentSpineIndex});
                     
                     var idx = parseInt(active.getAttribute('data-index'));
-                    var totalPages = Math.round(active.scrollWidth / pw);
-                    var currPage = Math.round(-active.getBoundingClientRect().left / pw) + 1;
+                    var rects = active.getClientRects();
+                    var totalPages = rects.length;
+                    
+                    // Находим текущую страницу: разница между началом документа и началом активной главы
+                    var sl = window.pageXOffset || 0;
+                    var activeRect = active.getBoundingClientRect();
+                    var currPage = Math.round((sl - (sl + activeRect.left)) / pw) + 1;
+                    // Упрощенно: текущая страница это сколько pw влезло в "уехавшую влево" часть главы
+                    currPage = Math.round(-activeRect.left / pw) + 1;
                     
                     return JSON.stringify({
                         curr: Math.max(1, Math.min(currPage, totalPages)), 
@@ -477,10 +484,8 @@ class ReaderActivity : AppCompatActivity() {
                 display: block;
                 break-before: column;
                 -webkit-column-break-before: column;
-                margin: 0 !important;
-                padding: 0 !important;
             }
-            p, h1, h2, h3, h4, h5, h6, li, section, div, img { 
+            p, h1, h2, h3, h4, h5, h6, li, div, img { 
                 padding-left: ${halfGapPx}px !important;
                 padding-right: ${halfGapPx}px !important;
             }
@@ -825,19 +830,17 @@ class ReaderActivity : AppCompatActivity() {
                 webView.evaluateJavascript("""
                     (function() {
                         var retry = 0;
-                        var lastWidth = 0;
                         function sync() {
                             var target = document.getElementById('$fragment') || document.getElementsByName('$fragment')[0];
-                            var pw = document.documentElement.getBoundingClientRect().width;
+                            var pw = document.documentElement.clientWidth;
                             var sw = document.documentElement.scrollWidth;
-                            if ((target && sw > pw && sw === lastWidth) || retry > 60) {
+                            if ((target && sw > pw) || retry > 60) {
                                 if (target) {
                                     var rect = target.getBoundingClientRect();
                                     var pageIndex = Math.floor((window.pageXOffset + rect.left + 5) / pw);
                                     window.scrollTo(pageIndex * pw, 0);
                                 }
                             } else {
-                                lastWidth = sw;
                                 retry++;
                                 setTimeout(sync, 50);
                             }
@@ -907,7 +910,7 @@ class ReaderActivity : AppCompatActivity() {
                         var sw = document.documentElement.scrollWidth;
                         var pw = document.documentElement.clientWidth;
                         var count = Math.round(sw / pw);
-                        if (isNaN(count)) return;
+                        if (isNaN(count) || count === 0) return;
 
                         ribbon.innerHTML = '';
                         for (var i = 0; i < count; i++) {
@@ -917,6 +920,24 @@ class ReaderActivity : AppCompatActivity() {
                         }
                     }
                     window.addEventListener('resize', updateSnapMarkers);
+
+                    function scrollToChapterElement(index, targetIdx, anchor) {
+                        var section = document.getElementById('chapter-' + index);
+                        if (!section) return;
+                        var pw = document.documentElement.clientWidth;
+                        var target = null;
+                        if (anchor) {
+                            target = document.getElementById(anchor) || document.getElementsByName(anchor)[0];
+                        } else if (targetIdx >= 0) {
+                            target = section.querySelector('[data-idx="' + targetIdx + '"]');
+                        }
+                        
+                        if (target) {
+                            var rect = target.getBoundingClientRect();
+                            var pageIndex = Math.floor((window.pageXOffset + rect.left + 5) / pw);
+                            window.scrollTo(pageIndex * pw, 0);
+                        }
+                    }
 
                     function appendChapter(index, html, targetIdx, targetOffset, lang, jumpToLast, anchor) {
                         var container = document.getElementById('chapters-container');
