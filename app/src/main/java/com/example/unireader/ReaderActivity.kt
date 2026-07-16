@@ -234,6 +234,88 @@ class ReaderActivity : AppCompatActivity() {
             val libraryProvider = LibraryProvider(this)
             libraryProvider.updateBookProgress(uri, currentSpineIndex, pos.first, pos.second, null)
         }
+        updateProgress()
+    }
+
+    private fun updateProgress() {
+        val book = epubBook ?: return
+        val totalChapters = book.spine.size
+        if (totalChapters == 0) return
+
+        if (isPagedMode) {
+            val js = """
+                (function() {
+                    var pw = document.documentElement.clientWidth;
+                    var sl = window.pageXOffset || 0;
+                    
+                    var sections = [...document.querySelectorAll('section')];
+                    var active = sections.find(s => {
+                        var r = s.getBoundingClientRect();
+                        return r.left <= pw/2 && r.right > pw/2;
+                    });
+                    
+                    if (!active) return JSON.stringify({curr: 1, total: 1, idx: $currentSpineIndex});
+                    
+                    var idx = parseInt(active.getAttribute('data-index'));
+                    var totalPages = Math.round(active.scrollWidth / pw);
+                    var currPage = Math.round((sl - active.offsetLeft) / pw) + 1;
+                    
+                    return JSON.stringify({
+                        curr: Math.max(1, Math.min(currPage, totalPages)), 
+                        total: Math.max(1, totalPages),
+                        idx: idx
+                    });
+                })();
+            """.trimIndent()
+
+            webView.evaluateJavascript(js) { result ->
+                try {
+                    val json = org.json.JSONObject(result.trim('"').replace("\\\"", "\""))
+                    val currPage = json.optInt("curr", 1)
+                    val totalPages = json.optInt("total", 1)
+                    val detectedIdx = json.optInt("idx", currentSpineIndex)
+                    
+                    if (detectedIdx != currentSpineIndex && !isChapterLoading) {
+                        currentSpineIndex = detectedIdx
+                        updateChapterTitle()
+                    }
+                    
+                    val chapterWeight = 100.0 / totalChapters
+                    val completedChaptersProgress = detectedIdx * chapterWeight
+                    val currentChapterProgress = (currPage.toDouble() / totalPages) * chapterWeight
+                    val totalProgress = (completedChaptersProgress + currentChapterProgress).coerceIn(0.0, 100.0)
+                    
+                    val displayStr = String.format(
+                        java.util.Locale.US,
+                        "Секция %d/%d • Стр. %d/%d • %.1f%%",
+                        detectedIdx + 1,
+                        totalChapters,
+                        currPage,
+                        totalPages,
+                        totalProgress,
+                    )
+                    
+                    runOnUiThread {
+                        findViewById<TextView>(R.id.tvProgressPlaceholder)?.text = displayStr
+                    }
+                } catch (e: Exception) {}
+            }
+        } else {
+            // В режиме скролла считаем по высоте
+            val js = "(function() { return JSON.stringify({ y: window.pageYOffset, h: document.documentElement.scrollHeight, vh: window.innerHeight }); })();"
+            webView.evaluateJavascript(js) { result ->
+                try {
+                    val json = org.json.JSONObject(result.trim('"').replace("\\\"", "\""))
+                    val y = json.optDouble("y", 0.0)
+                    val h = json.optDouble("h", 1.0)
+                    val vh = json.optDouble("vh", 1.0)
+                    val progress = (((y + vh) / h) * 100).coerceIn(0.0, 100.0)
+                    runOnUiThread {
+                        findViewById<TextView>(R.id.tvProgressPlaceholder)?.text = String.format(java.util.Locale.US, "Прогресс: %.1f%%", progress)
+                    }
+                } catch (_: Exception) {}
+            }
+        }
     }
 
     private fun captureCurrentPosition(onCaptured: (Pair<Int, Int>) -> Unit) {
@@ -370,6 +452,7 @@ class ReaderActivity : AppCompatActivity() {
                 margin: 0; padding: 0; height: 100vh; width: 100vw; 
                 overflow-x: auto; overflow-y: hidden; 
                 -webkit-overflow-scrolling: touch;
+                scroll-snap-type: x mandatory;
             }
             body { 
                 height: 100vh; width: 100vw;
@@ -377,6 +460,16 @@ class ReaderActivity : AppCompatActivity() {
                 -webkit-column-width: 100vw !important; -webkit-column-gap: 0 !important;
                 column-width: 100vw !important; column-gap: 0 !important;
                 -webkit-column-fill: auto; column-fill: auto;
+            }
+            #snap-ribbon {
+                position: absolute; top: 0; left: 0;
+                display: flex; height: 1px; width: 100%;
+                pointer-events: none;
+            }
+            .snap-point {
+                width: 100vw; height: 1px; flex-shrink: 0;
+                scroll-snap-align: start;
+                scroll-snap-stop: always;
             }
             section {
                 display: block;
@@ -411,6 +504,10 @@ class ReaderActivity : AppCompatActivity() {
 
         val finalCss = (commonCss + modeCss).replace("\n", " ")
         webView.evaluateJavascript("var style = document.getElementById('reader-style') || document.createElement('style'); style.id = 'reader-style'; style.innerHTML = '$finalCss'; if (!style.parentNode) document.head.appendChild(style);", null)
+        
+        if (isPagedMode) {
+            webView.evaluateJavascript("if (typeof updateSnapMarkers === 'function') updateSnapMarkers();", null)
+        }
     }
 
     fun updateUiState() {
@@ -480,8 +577,8 @@ class ReaderActivity : AppCompatActivity() {
                 }
 
                 when {
-                    (x < width * 0.3) -> if (isPagedMode) prevPage()
-                    (x > width * 0.7) -> if (isPagedMode) nextPage()
+                    (x < (width * 0.3)) -> if (isPagedMode) prevPage()
+                    (x > (width * 0.7)) -> if (isPagedMode) nextPage()
                     else -> if (isFullscreenPref) { isUiOverlayVisible = !isUiOverlayVisible; updateUiState() }
                 }
                 return true
@@ -549,6 +646,8 @@ class ReaderActivity : AppCompatActivity() {
         webView.settings.allowFileAccess = true
         webView.settings.cacheMode = WebSettings.LOAD_NO_CACHE
         webView.settings.domStorageEnabled = true
+        webView.isVerticalScrollBarEnabled = false
+        webView.isHorizontalScrollBarEnabled = false
         
         webView.addJavascriptInterface(object {
             @Keep
@@ -595,8 +694,15 @@ class ReaderActivity : AppCompatActivity() {
                             loadAndAppendChapter(index + 1)
                             loadAndPrependChapter(index - 1)
                         }
+                        updateProgress()
                     }
                 }
+            }
+            @Keep
+            @JavascriptInterface
+            @Suppress("unused")
+            fun onScrollProgress() {
+                runOnUiThread { updateProgress() }
             }
         }, "AndroidReader",)
 
@@ -622,6 +728,7 @@ class ReaderActivity : AppCompatActivity() {
                 if (shouldJumpToLastPage && !isPagedMode) {
                     executeJumpToLastPage()
                 }
+                updateProgress()
             }
         }
         webView.setOnTouchListener { _, event ->
@@ -753,8 +860,10 @@ class ReaderActivity : AppCompatActivity() {
                 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
             </head>
             <body data-mode="paged" style="background-color: $bgColor !important; margin: 0; padding: 0;">
+                <div id="snap-ribbon"></div>
                 <div id="chapters-container"></div>
                 <script>
+                    var scrollTimeout;
                     window.addEventListener('scroll', function() {
                         var sw = document.documentElement.scrollWidth;
                         var pw = document.documentElement.getBoundingClientRect().width;
@@ -774,11 +883,38 @@ class ReaderActivity : AppCompatActivity() {
                         if (active) {
                             AndroidReader.onChapterEntered(parseInt(active.getAttribute('data-index')));
                         }
+
+                        // Сообщаем о прогрессе
+                        clearTimeout(scrollTimeout);
+                        scrollTimeout = setTimeout(function() {
+                            AndroidReader.onScrollProgress();
+                        }, 50);
                     });
+
+                    function updateSnapMarkers() {
+                        var ribbon = document.getElementById('snap-ribbon');
+                        if (!ribbon) return;
+                        var sw = document.documentElement.scrollWidth;
+                        var pw = document.documentElement.clientWidth;
+                        var count = Math.round(sw / pw);
+                        if (isNaN(count)) return;
+
+                        ribbon.innerHTML = '';
+                        for (var i = 0; i < count; i++) {
+                            var p = document.createElement('div');
+                            p.className = 'snap-point';
+                            ribbon.appendChild(p);
+                        }
+                    }
+                    window.addEventListener('resize', updateSnapMarkers);
 
                     function appendChapter(index, html, targetIdx, targetOffset, lang, jumpToLast, anchor) {
                         var container = document.getElementById('chapters-container');
-                        if (document.getElementById('chapter-' + index)) return;
+                        if (document.getElementById('chapter-' + index)) {
+                            // Глава уже есть, если просили скролл - делаем
+                            if (jumpToLast || anchor || targetIdx >= 0) scrollToChapterElement(index, targetIdx, anchor);
+                            return;
+                        }
                         
                         var section = document.createElement('section');
                         section.id = 'chapter-' + index;
@@ -790,6 +926,7 @@ class ReaderActivity : AppCompatActivity() {
                         for (var i=0; i<items.length; i++) items[i].setAttribute('data-idx', i);
                         
                         container.appendChild(section);
+                        updateSnapMarkers();
                         
                         if (jumpToLast || anchor || targetIdx >= 0) {
                             var retry = 0;
@@ -801,20 +938,8 @@ class ReaderActivity : AppCompatActivity() {
                                         var rect = section.getBoundingClientRect();
                                         var lastPageInDoc = Math.floor((window.pageXOffset + rect.right - 5) / pw);
                                         window.scrollTo(lastPageInDoc * pw, 0);
-                                    } else if (anchor) {
-                                        var target = document.getElementById(anchor) || document.getElementsByName(anchor)[0];
-                                        if (target) {
-                                            var rect = target.getBoundingClientRect();
-                                            var page = Math.floor((window.pageXOffset + rect.left + 5) / pw);
-                                            window.scrollTo(page * pw, 0);
-                                        }
-                                    } else if (targetIdx >= 0) {
-                                        var target = section.querySelector('[data-idx="' + targetIdx + '"]');
-                                        if (target) {
-                                            var rect = target.getBoundingClientRect();
-                                            var page = Math.floor((window.pageXOffset + rect.left + 5) / pw);
-                                            window.scrollTo(page * pw, 0);
-                                        }
+                                    } else {
+                                        scrollToChapterElement(index, targetIdx, anchor);
                                     }
                                 } else {
                                     retry++;
@@ -840,6 +965,7 @@ class ReaderActivity : AppCompatActivity() {
                         
                         var oldWidth = document.documentElement.scrollWidth;
                         container.insertBefore(section, container.firstChild);
+                        updateSnapMarkers();
 
                         requestAnimationFrame(function() {
                             var newWidth = document.documentElement.scrollWidth;
@@ -852,26 +978,6 @@ class ReaderActivity : AppCompatActivity() {
                             }
                         });
                     }
-
-                    // SNAP LOGIC (Stable version)
-                    var isSnapping = false;
-                    var scrollTimeout;
-                    function performSnap() {
-                        if (isSnapping) return;
-                        var pw = document.documentElement.getBoundingClientRect().width;
-                        var sl = window.pageXOffset;
-                        var targetPage = Math.round(sl / pw);
-                        if (Math.abs(sl - targetPage * pw) > 1) {
-                            isSnapping = true;
-                            window.scrollTo({ left: targetPage * pw, behavior: 'smooth' });
-                            setTimeout(function() { isSnapping = false; }, 400);
-                        }
-                    }
-                    window.addEventListener('scroll', function() {
-                        if (isSnapping) return;
-                        clearTimeout(scrollTimeout);
-                        scrollTimeout = setTimeout(performSnap, 100);
-                    }, { passive: true });
                 </script>
             </body>
             </html>
@@ -919,6 +1025,7 @@ class ReaderActivity : AppCompatActivity() {
             <body style="background-color: $bgColor !important;">
                 <div id="chapters-container"></div>
                 <script>
+                    var scrollTimeout;
                     var observer = new IntersectionObserver(function(entries) {
                         entries.forEach(function(entry) {
                             if (entry.isIntersecting) {
@@ -940,6 +1047,11 @@ class ReaderActivity : AppCompatActivity() {
                         if (active) {
                             AndroidReader.onChapterEntered(parseInt(active.getAttribute('data-index')));
                         }
+                        
+                        clearTimeout(scrollTimeout);
+                        scrollTimeout = setTimeout(function() {
+                            AndroidReader.onScrollProgress();
+                        }, 100);
                     });
 
                     function appendChapter(index, html, targetIdx, targetOffset, lang) {
@@ -1199,6 +1311,8 @@ class ReaderActivity : AppCompatActivity() {
         """.trimIndent()) { 
             if (it == "\"next\"") {
                 loadNextSpineItem()
+            } else {
+                updateProgress()
             }
         }
     }
@@ -1217,7 +1331,11 @@ class ReaderActivity : AppCompatActivity() {
                 return 'prev'; 
             })();
         """.trimIndent()) {
-            if (it == "\"prev\"") loadPrevSpineItem()
+            if (it == "\"prev\"") {
+                loadPrevSpineItem()
+            } else {
+                updateProgress()
+            }
         }
     }
 }
