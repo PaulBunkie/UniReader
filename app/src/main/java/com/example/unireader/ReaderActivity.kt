@@ -55,6 +55,7 @@ class ReaderActivity : AppCompatActivity() {
     private var pendingElementIndex = -1
     private var pendingCharOffset = -1
     private var pendingAnchor: String? = null
+    private var isJumpingToChapter = false
 
     lateinit var settings: ReaderSettings
     private lateinit var gestureDetector: GestureDetector
@@ -377,6 +378,11 @@ class ReaderActivity : AppCompatActivity() {
                 column-width: 100vw !important; column-gap: 0 !important;
                 -webkit-column-fill: auto; column-fill: auto;
             }
+            section {
+                display: block;
+                break-before: column;
+                -webkit-column-break-before: column;
+            }
             p, h1, h2, h3, h4, h5, h6, li { 
                 margin: 0 !important;
                 padding: 0 ${halfGapPx}px ${1.2 * settings.paragraphSpacing}em ${halfGapPx}px !important; 
@@ -558,7 +564,7 @@ class ReaderActivity : AppCompatActivity() {
             @Suppress("unused")
             fun onReachedBottom() {
                 runOnUiThread { 
-                    if (!isPagedMode && !isChapterLoading) {
+                    if (!isChapterLoading) {
                         loadAndAppendChapter(lastAppendedIndex + 1)
                     }
                 }
@@ -568,7 +574,7 @@ class ReaderActivity : AppCompatActivity() {
             @Suppress("unused")
             fun onReachedTop() {
                 runOnUiThread {
-                    if (!isPagedMode && !isChapterLoading) {
+                    if (!isChapterLoading) {
                         loadAndPrependChapter(firstPrependedIndex - 1)
                     }
                 }
@@ -578,10 +584,17 @@ class ReaderActivity : AppCompatActivity() {
             @Suppress("unused")
             fun onChapterEntered(index: Int) {
                 runOnUiThread {
+                    if (isJumpingToChapter) return@runOnUiThread
+                    
                     if (currentSpineIndex != index) {
                         currentSpineIndex = index
                         updateChapterTitle()
                         saveReadingPosition()
+                        
+                        if (isPagedMode) {
+                            loadAndAppendChapter(index + 1)
+                            loadAndPrependChapter(index - 1)
+                        }
                     }
                 }
             }
@@ -601,12 +614,12 @@ class ReaderActivity : AppCompatActivity() {
             }
             override fun onPageFinished(view: WebView?, url: String?) { 
                 applyCurrentSettings()
-                // Only inject indexing in paged mode; seamless mode indexes per-section in appendChapter/prependChapter
                 if (isPagedMode) {
                     injectIndexingScript()
+                    loadInitialPagedChapters()
                 }
                 
-                if (shouldJumpToLastPage) {
+                if (shouldJumpToLastPage && !isPagedMode) {
                     executeJumpToLastPage()
                 }
             }
@@ -729,147 +742,167 @@ class ReaderActivity : AppCompatActivity() {
     }
 
     private fun initPagedView() {
-        val loader = chapterLoader ?: return
-        val content = loader.loadChapterHtml(currentSpineIndex) ?: return
-        
         val isDarkMode = settings.isDarkMode
         val bgColor = if (isDarkMode) "#000000" else "#FFFFFF"
 
-        val targetIdx = pendingElementIndex
-        val targetOffset = pendingCharOffset
-        pendingElementIndex = -1
-        pendingCharOffset = -1
-
-        val wrappedHtml = """
+        val html = """
             <!DOCTYPE html>
-            <html ${if (content.lang != null) "lang=\"${content.lang}\"" else ""} style="background-color: $bgColor;">
+            <html style="background-color: $bgColor;">
             <head>
                 <style id="reader-style"></style>
                 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+            </head>
+            <body data-mode="paged" style="background-color: $bgColor !important; margin: 0; padding: 0;">
+                <div id="chapters-container"></div>
                 <script>
-                    function restorePosition(idx, offset) {
-                        var target = document.querySelector('[data-idx="' + idx + '"]');
-                        if (!target) return;
-                        
+                    window.addEventListener('scroll', function() {
+                        var sw = document.documentElement.scrollWidth;
                         var pw = document.documentElement.getBoundingClientRect().width;
-                        
-                        if (offset <= 0) {
-                            var rect = target.getBoundingClientRect();
-                            var page = Math.floor((window.pageXOffset + rect.left + 5) / pw);
-                            window.scrollTo(page * pw, 0);
-                            return;
-                        }
-                        
-                        // Find node and local offset
-                        var current = 0;
-                        var foundNode = null;
-                        var localOffset = 0;
-                        var walker = document.createTreeWalker(target, NodeFilter.SHOW_TEXT, null, false);
-                        while (walker.nextNode()) {
-                            var len = walker.currentNode.textContent.length;
-                            if (current + len >= offset) {
-                                foundNode = walker.currentNode;
-                                localOffset = offset - current;
-                                break;
-                            }
-                            current += len;
-                        }
-                        
-                        if (foundNode) {
-                            var range = document.createRange();
-                            range.setStart(foundNode, localOffset);
-                            range.setEnd(foundNode, Math.min(localOffset + 1, foundNode.textContent.length));
-                            var rects = range.getClientRects();
-                            if (rects.length > 0) {
-                                var rect = rects[0];
-                                var page = Math.floor((window.pageXOffset + rect.left + 5) / pw);
-                                window.scrollTo(page * pw, 0);
-                            }
-                        }
-                    }
-                    
-                    window.addEventListener('load', function() {
-                        // Index elements BEFORE attempting restore
-                        var items = document.querySelectorAll('p, h1, h2, h3, h4, h5, h6, li, img');
-                        for (var i = 0; i < items.length; i++) items[i].setAttribute('data-idx', i);
-                        
-                        if ($targetIdx >= 0) {
-                            var retry = 0;
-                            function sync() {
-                                var sw = document.documentElement.scrollWidth;
-                                var pw = document.documentElement.getBoundingClientRect().width;
-                                if (sw > pw || retry > 50) {
-                                    restorePosition($targetIdx, $targetOffset);
-                                } else {
-                                    retry++;
-                                    setTimeout(sync, 50);
-                                }
-                            }
-                            sync();
+                        var sl = window.pageXOffset;
+
+                        if (sl + pw >= sw - 20) {
+                            AndroidReader.onReachedBottom();
+                        } else if (sl <= 20) {
+                            AndroidReader.onReachedTop();
                         }
 
-                        var anchor = ${if (pendingAnchor != null) "'$pendingAnchor'" else "null"};
-                        if (anchor) {
-                            var retryAnchor = 0;
-                            function syncAnchor() {
-                                var target = document.getElementById(anchor) || document.getElementsByName(anchor)[0];
+                        var sections = [...document.querySelectorAll('section')];
+                        var active = sections.find(s => {
+                            var r = s.getBoundingClientRect();
+                            return r.left <= 20 && r.right > 20;
+                        });
+                        if (active) {
+                            AndroidReader.onChapterEntered(parseInt(active.getAttribute('data-index')));
+                        }
+                    });
+
+                    function appendChapter(index, html, targetIdx, targetOffset, lang, jumpToLast, anchor) {
+                        var container = document.getElementById('chapters-container');
+                        if (document.getElementById('chapter-' + index)) return;
+                        
+                        var section = document.createElement('section');
+                        section.id = 'chapter-' + index;
+                        section.setAttribute('data-index', index);
+                        if (lang) section.setAttribute('lang', lang);
+                        section.innerHTML = html;
+                        
+                        var items = section.querySelectorAll('p, h1, h2, h3, h4, h5, h6, li, img');
+                        for (var i=0; i<items.length; i++) items[i].setAttribute('data-idx', i);
+                        
+                        container.appendChild(section);
+                        
+                        if (jumpToLast || anchor || targetIdx >= 0) {
+                            var retry = 0;
+                            function syncIdxScroll() {
                                 var pw = document.documentElement.getBoundingClientRect().width;
                                 var sw = document.documentElement.scrollWidth;
-                                if ((target && sw > pw) || retryAnchor > 60) {
-                                    if (target) {
-                                        var rect = target.getBoundingClientRect();
-                                        var pageIndex = Math.floor((window.pageXOffset + rect.left + 5) / pw);
-                                        window.scrollTo(pageIndex * pw, 0);
+                                if (sw > pw || retry > 40) {
+                                    if (jumpToLast) {
+                                        var rect = section.getBoundingClientRect();
+                                        var lastPageInDoc = Math.floor((window.pageXOffset + rect.right - 5) / pw);
+                                        window.scrollTo(lastPageInDoc * pw, 0);
+                                    } else if (anchor) {
+                                        var target = document.getElementById(anchor) || document.getElementsByName(anchor)[0];
+                                        if (target) {
+                                            var rect = target.getBoundingClientRect();
+                                            var page = Math.floor((window.pageXOffset + rect.left + 5) / pw);
+                                            window.scrollTo(page * pw, 0);
+                                        }
+                                    } else if (targetIdx >= 0) {
+                                        var target = section.querySelector('[data-idx="' + targetIdx + '"]');
+                                        if (target) {
+                                            var rect = target.getBoundingClientRect();
+                                            var page = Math.floor((window.pageXOffset + rect.left + 5) / pw);
+                                            window.scrollTo(page * pw, 0);
+                                        }
                                     }
                                 } else {
-                                    retryAnchor++;
-                                    setTimeout(syncAnchor, 50);
+                                    retry++;
+                                    setTimeout(syncIdxScroll, 50);
                                 }
                             }
-                            syncAnchor();
+                            syncIdxScroll();
                         }
+                    }
 
-                        // LINE-BASED MAGNET (Snap to Page)
-                        var isSnapping = false;
-                        var scrollTimeout;
-                        function performSnap() {
-                            if (isSnapping) return;
-                            var pw = document.documentElement.getBoundingClientRect().width;
-                            var sl = window.pageXOffset;
-                            var sw = document.documentElement.scrollWidth;
-                            
-                            var targetPage = Math.round(sl / pw);
-                            if (Math.abs(sl - targetPage * pw) > 1) {
-                                isSnapping = true;
-                                window.scrollTo({ left: targetPage * pw, behavior: 'smooth' });
-                                setTimeout(function() { isSnapping = false; }, 400);
-                            }
-                        }
-
-                        if ('onscrollend' in window) {
-                            window.addEventListener('scrollend', performSnap);
-                        }
+                    function prependChapter(index, html, lang, scrollToLast) {
+                        var container = document.getElementById('chapters-container');
+                        if (document.getElementById('chapter-' + index)) return;
                         
-                        window.addEventListener('scroll', function() {
-                            if (isSnapping) return;
-                            clearTimeout(scrollTimeout);
-                            scrollTimeout = setTimeout(performSnap, 50);
-                        }, { passive: true });
+                        var section = document.createElement('section');
+                        section.id = 'chapter-' + index;
+                        section.setAttribute('data-index', index);
+                        if (lang) section.setAttribute('lang', lang);
+                        section.innerHTML = html;
+                        
+                        var items = section.querySelectorAll('p, h1, h2, h3, h4, h5, h6, li, img');
+                        for (var i=0; i<items.length; i++) items[i].setAttribute('data-idx', i);
+                        
+                        var oldWidth = document.documentElement.scrollWidth;
+                        container.insertBefore(section, container.firstChild);
 
-                        window.addEventListener('touchend', function() {
-                            if (isSnapping) return;
-                            clearTimeout(scrollTimeout);
-                            scrollTimeout = setTimeout(performSnap, 20);
-                        }, { passive: true });
-                    });
+                        requestAnimationFrame(function() {
+                            var newWidth = document.documentElement.scrollWidth;
+                            var pw = document.documentElement.getBoundingClientRect().width;
+                            if (scrollToLast) {
+                                var pages = Math.round((newWidth - oldWidth) / pw);
+                                window.scrollTo((pages - 1) * pw, 0);
+                            } else {
+                                window.scrollBy(newWidth - oldWidth, 0);
+                            }
+                        });
+                    }
+
+                    // SNAP LOGIC (Stable version)
+                    var isSnapping = false;
+                    var scrollTimeout;
+                    function performSnap() {
+                        if (isSnapping) return;
+                        var pw = document.documentElement.getBoundingClientRect().width;
+                        var sl = window.pageXOffset;
+                        var targetPage = Math.round(sl / pw);
+                        if (Math.abs(sl - targetPage * pw) > 1) {
+                            isSnapping = true;
+                            window.scrollTo({ left: targetPage * pw, behavior: 'smooth' });
+                            setTimeout(function() { isSnapping = false; }, 400);
+                        }
+                    }
+                    window.addEventListener('scroll', function() {
+                        if (isSnapping) return;
+                        clearTimeout(scrollTimeout);
+                        scrollTimeout = setTimeout(performSnap, 100);
+                    }, { passive: true });
                 </script>
-            </head>
-            <body data-mode="paged" style="margin: 0 !important; padding: 0 !important; background-color: $bgColor !important;">
-                ${content.html}
             </body>
             </html>
         """.trimIndent()
-        webView.loadDataWithBaseURL("epub://paged/", wrappedHtml, "text/html", "UTF-8", null)
+
+        lastAppendedIndex = -1
+        firstPrependedIndex = Int.MAX_VALUE
+        isChapterLoading = false
+        isJumpingToChapter = true
+
+        webView.loadDataWithBaseURL("epub://paged/", html, "text/html", "UTF-8", null)
+    }
+
+    private fun loadInitialPagedChapters() {
+        val idxToUse = pendingElementIndex
+        val offsetToUse = pendingCharOffset
+        val anchorToUse = pendingAnchor
+        val jumpToLast = shouldJumpToLastPage
+
+        pendingElementIndex = -1
+        pendingCharOffset = -1
+        pendingAnchor = null
+        shouldJumpToLastPage = false
+
+        // 1. Сначала грузим только ЦЕЛЕВУЮ главу
+        loadAndAppendChapter(currentSpineIndex, idxToUse, offsetToUse, jumpToLast, anchorToUse) {
+            // 2. Когда она на месте, снимаем блок и грузим соседей
+            isJumpingToChapter = false
+            loadAndPrependChapter(currentSpineIndex - 1)
+            loadAndAppendChapter(currentSpineIndex + 1)
+        }
     }
 
     private fun initSeamlessScroll() {
@@ -1027,13 +1060,24 @@ class ReaderActivity : AppCompatActivity() {
         }, 500)
     }
 
-    private fun loadAndAppendChapter(index: Int, targetIdx: Int = -1, targetOffset: Int = -1) {
+    private fun loadAndAppendChapter(
+        index: Int, 
+        targetIdx: Int = -1, 
+        targetOffset: Int = -1, 
+        jumpToLast: Boolean = false, 
+        anchor: String? = null,
+        onFinished: (() -> Unit)? = null
+    ) {
         val loader = chapterLoader ?: return
-        if (index < 0 || index >= (epubBook?.spine?.size ?: 0) || index <= lastAppendedIndex) return
+        if (index < 0 || index >= (epubBook?.spine?.size ?: 0) || index <= lastAppendedIndex) {
+            onFinished?.invoke()
+            return
+        }
         
         isChapterLoading = true
         val content = loader.loadChapterHtml(index) ?: run {
             isChapterLoading = false
+            onFinished?.invoke()
             return
         }
         
@@ -1042,12 +1086,14 @@ class ReaderActivity : AppCompatActivity() {
         
         val escapedHtml = content.html.replace("`", "\\`").replace("$", "\\$")
         val langArg = if (content.lang != null) "'${content.lang}'" else "null"
-        webView.evaluateJavascript("appendChapter($index, `$escapedHtml`, $targetIdx, $targetOffset, $langArg);") {
+        val anchorArg = if (anchor != null) "'$anchor'" else "null"
+        webView.evaluateJavascript("appendChapter($index, `$escapedHtml`, $targetIdx, $targetOffset, $langArg, $jumpToLast, $anchorArg);") {
             isChapterLoading = false
+            onFinished?.invoke()
         }
     }
 
-    private fun loadAndPrependChapter(index: Int) {
+    private fun loadAndPrependChapter(index: Int, scrollToLast: Boolean = false) {
         val loader = chapterLoader ?: return
         if (index < 0 || index >= (epubBook?.spine?.size ?: 0) || index >= firstPrependedIndex) return
         
@@ -1060,19 +1106,23 @@ class ReaderActivity : AppCompatActivity() {
         firstPrependedIndex = index
         val escapedHtml = content.html.replace("`", "\\`").replace("$", "\\$")
         val langArg = if (content.lang != null) "'${content.lang}'" else "null"
-        webView.evaluateJavascript("prependChapter($index, `$escapedHtml`, $langArg);") {
+        webView.evaluateJavascript("prependChapter($index, `$escapedHtml`, $langArg, $scrollToLast);") {
             isChapterLoading = false
         }
     }
 
     private fun loadNextSpineItem() {
-        if (currentSpineIndex < (epubBook?.spine?.size ?: 0) - 1) {
+        if (isPagedMode) {
+            loadAndAppendChapter(lastAppendedIndex + 1, targetIdx = 0)
+        } else if (currentSpineIndex < (epubBook?.spine?.size ?: 0) - 1) {
             loadSpineItem(currentSpineIndex + 1, jumpToLast = false)
         }
     }
 
     private fun loadPrevSpineItem() {
-        if (currentSpineIndex > 0) {
+        if (isPagedMode) {
+            loadAndPrependChapter(firstPrependedIndex - 1, scrollToLast = true)
+        } else if (currentSpineIndex > 0) {
             loadSpineItem(currentSpineIndex - 1, jumpToLast = true)
         }
     }
