@@ -258,7 +258,7 @@ class ReaderActivity : AppCompatActivity() {
                     
                     var idx = parseInt(active.getAttribute('data-index'));
                     var totalPages = Math.round(active.scrollWidth / pw);
-                    var currPage = Math.round((sl - active.offsetLeft) / pw) + 1;
+                    var currPage = Math.round(-active.getBoundingClientRect().left / pw) + 1;
                     
                     return JSON.stringify({
                         curr: Math.max(1, Math.min(currPage, totalPages)), 
@@ -465,24 +465,34 @@ class ReaderActivity : AppCompatActivity() {
                 position: absolute; top: 0; left: 0;
                 display: flex; height: 1px; width: 100%;
                 pointer-events: none;
+                max-width: none !important;
             }
             .snap-point {
                 width: 100vw; height: 1px; flex-shrink: 0;
                 scroll-snap-align: start;
                 scroll-snap-stop: always;
+                max-width: none !important;
             }
             section {
                 display: block;
                 break-before: column;
                 -webkit-column-break-before: column;
+                margin: 0 !important;
+                padding: 0 !important;
+            }
+            p, h1, h2, h3, h4, h5, h6, li, section, div, img { 
+                padding-left: ${halfGapPx}px !important;
+                padding-right: ${halfGapPx}px !important;
             }
             p, h1, h2, h3, h4, h5, h6, li { 
                 margin: 0 !important;
-                padding: 0 ${halfGapPx}px ${1.2 * settings.paragraphSpacing}em ${halfGapPx}px !important; 
+                padding-top: 0 !important;
+                padding-bottom: ${1.2 * settings.paragraphSpacing}em !important; 
             }
             div {
                 margin: 0 !important;
-                padding: 0 ${halfGapPx}px 0 ${halfGapPx}px !important;
+                padding-top: 0 !important;
+                padding-bottom: 0 !important;
             }
             """.trimIndent()
         } else {

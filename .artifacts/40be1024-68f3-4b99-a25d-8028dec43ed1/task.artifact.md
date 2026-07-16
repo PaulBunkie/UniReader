@@ -1,6 +1,6 @@
-# Tasks - Native CSS Scroll Snap & Progress Sync
+# Tasks - Robust Paging & Progress Detection
 
-- `[x]` Update `applyCurrentSettings` in `ReaderActivity.kt` (CSS)
-- `[x]` Update `initPagedView` in `ReaderActivity.kt` (HTML/JS)
-- `[x]` Update `updateProgress()` in `ReaderActivity.kt` (Autonomous detection)
-- `[x]` Verify snapping and progress info accuracy
+- `[ ]` Update `applyCurrentSettings` in `ReaderActivity.kt` (CSS & Snap Markers)
+- `[ ]` Update `updateProgress()` in `ReaderActivity.kt` (Robust autonomous detection)
+- `[ ]` Update `initPagedView` in `ReaderActivity.kt` (updateSnapMarkers fixes)
+- `[ ]` Verify layout and page counting accuracy
