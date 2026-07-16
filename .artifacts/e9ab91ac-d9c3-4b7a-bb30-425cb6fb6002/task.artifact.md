@@ -1,0 +1,5 @@
+- `[x]` Update `ReaderSettings.kt` to persist `isFullscreen`
+- `[x]` Fix state initialization in `ReaderActivity.onCreate`
+- `[x]` Update `ReaderActivity` methods to save states to `ReaderSettings`
+- `[x]` Improve `updateUiState` reliability
+- `[ ]` Verify changes with rotation and app restart

@@ -111,8 +111,11 @@ class ReaderActivity : AppCompatActivity() {
         pendingElementIndex = savedInstanceState?.getInt("element_index", -1) ?: -1
         pendingCharOffset = savedInstanceState?.getInt("char_offset", -1) ?: -1
         pendingAnchor = savedInstanceState?.getString("anchor")
-        isFullscreenPref = savedInstanceState?.getBoolean("fullscreen", false) ?: false
-        isUiOverlayVisible = savedInstanceState?.getBoolean("ui_visible", true) ?: !isFullscreenPref
+        
+        // Load modes from settings, then override with savedInstanceState if present
+        isPagedMode = savedInstanceState?.getBoolean("paged_mode", settings.isPagedMode) ?: settings.isPagedMode
+        isFullscreenPref = savedInstanceState?.getBoolean("fullscreen", settings.isFullscreen) ?: settings.isFullscreen
+        isUiOverlayVisible = savedInstanceState?.getBoolean("ui_visible", !isFullscreenPref) ?: !isFullscreenPref
 
         if (uriString != null) {
             val uri = uriString.toUri()
@@ -150,6 +153,7 @@ class ReaderActivity : AppCompatActivity() {
         outState.putString("anchor", pendingAnchor)
         outState.putBoolean("fullscreen", isFullscreenPref)
         outState.putBoolean("ui_visible", isUiOverlayVisible)
+        outState.putBoolean("paged_mode", isPagedMode)
     }
 
     private fun updateBookTitles() {
@@ -193,6 +197,8 @@ class ReaderActivity : AppCompatActivity() {
     fun toggleFullscreenExternally(enabled: Boolean) {
         isFullscreenPref = enabled
         isUiOverlayVisible = !isFullscreenPref
+        settings.isFullscreen = enabled
+        settings.save(this)
         updateUiState()
     }
 
@@ -201,6 +207,9 @@ class ReaderActivity : AppCompatActivity() {
         
         captureCurrentPosition { pos ->
             isPagedMode = paged
+            settings.isPagedMode = paged
+            settings.save(this)
+            
             pendingElementIndex = pos.first
             pendingCharOffset = pos.second
             
@@ -407,19 +416,25 @@ class ReaderActivity : AppCompatActivity() {
             params.topMargin = 0
             params.bottomMargin = 0
             if (!isUiOverlayVisible) {
-                windowInsetsController.hide(WindowInsetsCompat.Type.systemBars())
-                windowInsetsController.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                window.decorView.post {
+                    windowInsetsController.hide(WindowInsetsCompat.Type.systemBars())
+                    windowInsetsController.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                }
                 appBarLayout.visibility = View.GONE
                 bottomPanel.visibility = View.GONE
             } else {
-                windowInsetsController.show(WindowInsetsCompat.Type.systemBars())
+                window.decorView.post {
+                    windowInsetsController.show(WindowInsetsCompat.Type.systemBars())
+                }
                 appBarLayout.visibility = View.VISIBLE
                 bottomPanel.visibility = View.VISIBLE
                 appBarLayout.bringToFront()
                 bottomPanel.bringToFront()
             }
         } else {
-            windowInsetsController.show(WindowInsetsCompat.Type.systemBars())
+            window.decorView.post {
+                windowInsetsController.show(WindowInsetsCompat.Type.systemBars())
+            }
             isUiOverlayVisible = true
             appBarLayout.visibility = View.VISIBLE
             bottomPanel.visibility = View.VISIBLE

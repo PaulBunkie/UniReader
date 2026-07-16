@@ -18,6 +18,7 @@ data class ReaderSettings(
     var paddingBottom: Int = 0,
     var isDarkMode: Boolean = false,
     var isPagedMode: Boolean = true,
+    var isFullscreen: Boolean = false,
     var brightness: Float = -1.0f
 ) {
     companion object {
@@ -39,6 +40,7 @@ data class ReaderSettings(
                 paddingBottom = prefs.getInt("paddingBottom", 0),
                 isDarkMode = prefs.getBoolean("isDarkMode", false),
                 isPagedMode = prefs.getBoolean("isPagedMode", true),
+                isFullscreen = prefs.getBoolean("isFullscreen", false),
                 brightness = prefs.getFloat("brightness", -1.0f)
             )
         }
@@ -60,6 +62,7 @@ data class ReaderSettings(
             putInt("paddingBottom", paddingBottom)
             putBoolean("isDarkMode", isDarkMode)
             putBoolean("isPagedMode", isPagedMode)
+            putBoolean("isFullscreen", isFullscreen)
             putFloat("brightness", brightness)
         }
     }
