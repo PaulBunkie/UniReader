@@ -234,6 +234,78 @@ class ReaderActivity : AppCompatActivity() {
             val libraryProvider = LibraryProvider(this)
             libraryProvider.updateBookProgress(uri, currentSpineIndex, pos.first, pos.second, null)
         }
+        updateProgress()
+    }
+
+    private fun updateProgress() {
+        val book = epubBook ?: return
+        val totalChapters = book.spine.size
+        if (totalChapters == 0) return
+
+        if (isPagedMode) {
+            val js = """
+                (function() {
+                    var pw = window.innerWidth;
+                    var sl = window.pageXOffset || 0;
+                    var section = document.getElementById('chapter-' + $currentSpineIndex);
+                    if (!section) return JSON.stringify({curr: 1, total: 1});
+                    
+                    var rects = section.getClientRects();
+                    var totalPages = rects.length;
+                    
+                    // Находим текущую страницу внутри секции
+                    var sectionLeft = section.offsetLeft;
+                    var currPage = Math.floor((sl - sectionLeft + 10) / pw) + 1;
+                    
+                    return JSON.stringify({
+                        curr: Math.max(1, Math.min(currPage, totalPages)), 
+                        total: Math.max(1, totalPages)
+                    });
+                })();
+            """.trimIndent()
+
+            webView.evaluateJavascript(js) { result ->
+                try {
+                    val json = org.json.JSONObject(result.trim('"').replace("\\\"", "\""))
+                    val currPage = json.optInt("curr", 1)
+                    val totalPages = json.optInt("total", 1)
+                    
+                    val chapterWeight = 100.0 / totalChapters
+                    val completedChaptersProgress = currentSpineIndex * chapterWeight
+                    val currentChapterProgress = (currPage.toDouble() / totalPages) * chapterWeight
+                    val totalProgress = (completedChaptersProgress + currentChapterProgress).coerceIn(0.0, 100.0)
+                    
+                    val displayStr = String.format(
+                        java.util.Locale.US,
+                        "Секция %d/%d • Стр. %d/%d • %.1f%%",
+                        currentSpineIndex + 1,
+                        totalChapters,
+                        currPage,
+                        totalPages,
+                        totalProgress,
+                    )
+                    
+                    runOnUiThread {
+                        findViewById<TextView>(R.id.tvProgressPlaceholder)?.text = displayStr
+                    }
+                } catch (_: Exception) {}
+            }
+        } else {
+            // В режиме скролла считаем по высоте
+            val js = "(function() { return JSON.stringify({ y: window.pageYOffset, h: document.documentElement.scrollHeight, vh: window.innerHeight }); })();"
+            webView.evaluateJavascript(js) { result ->
+                try {
+                    val json = org.json.JSONObject(result.trim('"').replace("\\\"", "\""))
+                    val y = json.optDouble("y", 0.0)
+                    val h = json.optDouble("h", 1.0)
+                    val vh = json.optDouble("vh", 1.0)
+                    val progress = (((y + vh) / h) * 100).coerceIn(0.0, 100.0)
+                    runOnUiThread {
+                        findViewById<TextView>(R.id.tvProgressPlaceholder)?.text = String.format(java.util.Locale.US, "Прогресс: %.1f%%", progress)
+                    }
+                } catch (_: Exception) {}
+            }
+        }
     }
 
     private fun captureCurrentPosition(onCaptured: (Pair<Int, Int>) -> Unit) {
@@ -480,8 +552,8 @@ class ReaderActivity : AppCompatActivity() {
                 }
 
                 when {
-                    (x < width * 0.3) -> if (isPagedMode) prevPage()
-                    (x > width * 0.7) -> if (isPagedMode) nextPage()
+                    (x < (width * 0.3)) -> if (isPagedMode) prevPage()
+                    (x > (width * 0.7)) -> if (isPagedMode) nextPage()
                     else -> if (isFullscreenPref) { isUiOverlayVisible = !isUiOverlayVisible; updateUiState() }
                 }
                 return true
@@ -549,6 +621,8 @@ class ReaderActivity : AppCompatActivity() {
         webView.settings.allowFileAccess = true
         webView.settings.cacheMode = WebSettings.LOAD_NO_CACHE
         webView.settings.domStorageEnabled = true
+        webView.isVerticalScrollBarEnabled = false
+        webView.isHorizontalScrollBarEnabled = false
         
         webView.addJavascriptInterface(object {
             @Keep
@@ -595,8 +669,15 @@ class ReaderActivity : AppCompatActivity() {
                             loadAndAppendChapter(index + 1)
                             loadAndPrependChapter(index - 1)
                         }
+                        updateProgress()
                     }
                 }
+            }
+            @Keep
+            @JavascriptInterface
+            @Suppress("unused")
+            fun onScrollProgress() {
+                runOnUiThread { updateProgress() }
             }
         }, "AndroidReader",)
 
@@ -622,6 +703,7 @@ class ReaderActivity : AppCompatActivity() {
                 if (shouldJumpToLastPage && !isPagedMode) {
                     executeJumpToLastPage()
                 }
+                updateProgress()
             }
         }
         webView.setOnTouchListener { _, event ->
@@ -755,6 +837,7 @@ class ReaderActivity : AppCompatActivity() {
             <body data-mode="paged" style="background-color: $bgColor !important; margin: 0; padding: 0;">
                 <div id="chapters-container"></div>
                 <script>
+                    var scrollTimeout;
                     window.addEventListener('scroll', function() {
                         var sw = document.documentElement.scrollWidth;
                         var pw = document.documentElement.getBoundingClientRect().width;
@@ -774,11 +857,21 @@ class ReaderActivity : AppCompatActivity() {
                         if (active) {
                             AndroidReader.onChapterEntered(parseInt(active.getAttribute('data-index')));
                         }
+
+                        // Сообщаем о прогрессе
+                        clearTimeout(scrollTimeout);
+                        scrollTimeout = setTimeout(function() {
+                            AndroidReader.onScrollProgress();
+                        }, 50);
                     });
 
                     function appendChapter(index, html, targetIdx, targetOffset, lang, jumpToLast, anchor) {
                         var container = document.getElementById('chapters-container');
-                        if (document.getElementById('chapter-' + index)) return;
+                        if (document.getElementById('chapter-' + index)) {
+                            // Глава уже есть, если просили скролл - делаем
+                            if (jumpToLast || anchor || targetIdx >= 0) scrollToChapterElement(index, targetIdx, anchor);
+                            return;
+                        }
                         
                         var section = document.createElement('section');
                         section.id = 'chapter-' + index;
@@ -801,20 +894,8 @@ class ReaderActivity : AppCompatActivity() {
                                         var rect = section.getBoundingClientRect();
                                         var lastPageInDoc = Math.floor((window.pageXOffset + rect.right - 5) / pw);
                                         window.scrollTo(lastPageInDoc * pw, 0);
-                                    } else if (anchor) {
-                                        var target = document.getElementById(anchor) || document.getElementsByName(anchor)[0];
-                                        if (target) {
-                                            var rect = target.getBoundingClientRect();
-                                            var page = Math.floor((window.pageXOffset + rect.left + 5) / pw);
-                                            window.scrollTo(page * pw, 0);
-                                        }
-                                    } else if (targetIdx >= 0) {
-                                        var target = section.querySelector('[data-idx="' + targetIdx + '"]');
-                                        if (target) {
-                                            var rect = target.getBoundingClientRect();
-                                            var page = Math.floor((window.pageXOffset + rect.left + 5) / pw);
-                                            window.scrollTo(page * pw, 0);
-                                        }
+                                    } else {
+                                        scrollToChapterElement(index, targetIdx, anchor);
                                     }
                                 } else {
                                     retry++;
@@ -919,6 +1000,7 @@ class ReaderActivity : AppCompatActivity() {
             <body style="background-color: $bgColor !important;">
                 <div id="chapters-container"></div>
                 <script>
+                    var scrollTimeout;
                     var observer = new IntersectionObserver(function(entries) {
                         entries.forEach(function(entry) {
                             if (entry.isIntersecting) {
@@ -940,6 +1022,11 @@ class ReaderActivity : AppCompatActivity() {
                         if (active) {
                             AndroidReader.onChapterEntered(parseInt(active.getAttribute('data-index')));
                         }
+                        
+                        clearTimeout(scrollTimeout);
+                        scrollTimeout = setTimeout(function() {
+                            AndroidReader.onScrollProgress();
+                        }, 100);
                     });
 
                     function appendChapter(index, html, targetIdx, targetOffset, lang) {
@@ -1199,6 +1286,8 @@ class ReaderActivity : AppCompatActivity() {
         """.trimIndent()) { 
             if (it == "\"next\"") {
                 loadNextSpineItem()
+            } else {
+                updateProgress()
             }
         }
     }
@@ -1217,7 +1306,11 @@ class ReaderActivity : AppCompatActivity() {
                 return 'prev'; 
             })();
         """.trimIndent()) {
-            if (it == "\"prev\"") loadPrevSpineItem()
+            if (it == "\"prev\"") {
+                loadPrevSpineItem()
+            } else {
+                updateProgress()
+            }
         }
     }
 }
