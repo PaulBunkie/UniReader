@@ -2,7 +2,7 @@
 <resources>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
-    <!-- Semi-transparent surfaces (60% opacity) -->
-    <color name="glass_light">#99F0F0F0</color>
-    <color name="glass_dark">#991E1E1E</color>
+    <!-- Semi-transparent surfaces (85% opacity) -->
+    <color name="glass_light">#D9F0F0F0</color>
+    <color name="glass_dark">#D91E1E1E</color>
 </resources>

@@ -19,7 +19,6 @@ import android.webkit.WebViewClient
 import android.widget.TextView
 import androidx.annotation.Keep
 import androidx.appcompat.app.AppCompatActivity
-import androidx.appcompat.app.AppCompatDelegate
 import androidx.appcompat.widget.Toolbar
 import androidx.coordinatorlayout.widget.CoordinatorLayout
 import androidx.core.net.toUri
@@ -68,12 +67,6 @@ class ReaderActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         settings = ReaderSettings.load(this)
         
-        // APPLY SYSTEM THEME IMMEDIATELY
-        val mode = if (settings.isDarkMode) AppCompatDelegate.MODE_NIGHT_YES else AppCompatDelegate.MODE_NIGHT_NO
-        if (AppCompatDelegate.getDefaultNightMode() != mode) {
-            AppCompatDelegate.setDefaultNightMode(mode)
-        }
-
         super.onCreate(savedInstanceState)
         
         // APPLY SAVED BRIGHTNESS
