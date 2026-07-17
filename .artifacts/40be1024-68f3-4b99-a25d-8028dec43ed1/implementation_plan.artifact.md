@@ -1,41 +1,37 @@
-# Implementation Plan - Final Precision Navigation & Snap Taming
+# Implementation Plan - Native Scroll Snap (Minimalist Integration)
 
-This plan addresses the persistent issues with TOC navigation (jumping to wrong chapters) and progress detection (page numbers not updating). It focuses on isolating programmatic scrolls from the native snap mechanism and using absolute document coordinates.
+This plan adds native CSS Scroll Snapping to the reader while strictly preserving all existing navigation and layout logic from the stable baseline.
 
 ## User Review Required
 
 > [!IMPORTANT]
-> - **Snapping Isolation**: We will temporarily disable `scroll-snap-type` during programmatic scrolls (TOC jumps, backward paging). This prevents the browser from "fighting" our `scrollTo` commands.
-> - **Absolute Coordinate Mastery**: Instead of relying on viewport-relative `getBoundingClientRect`, we will use document-relative coordinates (`window.pageXOffset + rect.left`) for all calculations.
-> - **Progress Robustness**: We will simplify chapter detection to use the element closest to the left edge, making it more resilient to rounding errors.
+> - **Selective Snapping**: Snapping will be enabled on the `html` element. To prevent it from interfering with TOC jumps or mode switching, we will add a `setSnapping(enabled)` helper to toggle it during programmatic scrolls.
+> - **No Layout Shifts**: We will keep `column-gap: 0` and the current padding-based gap simulation. The snap points will be exactly `100vw` wide.
+> - **Removal of Manual Magnet**: The JS-based `performSnap` logic will be removed as it's no longer needed with native snapping.
 
 ## Proposed Changes
 
-### 1. Reader Activity Logic (JS & Kotlin)
-
+### 1. Update CSS Styles (applyCurrentSettings)
 #### [MODIFY] [ReaderActivity.kt](file:///C:/Users/Владелец/AndroidStudioProjects/UniReader/app/src/main/java/com/example/unireader/ReaderActivity.kt)
+- Add `scroll-snap-type: x mandatory` to the `html` tag in paged mode.
+- Add styles for the invisible `#snap-ribbon` and `.snap-point` markers.
 
-- **`updateSnapMarkers` (JS)**:
-    - Add a `setSnapping(enabled)` helper function to toggle `scroll-snap-type` on the `html` element.
-- **`scrollToChapterElement` (JS)**:
-    - Call `setSnapping(false)` before scrolling.
-    - Calculate `absX` using `window.pageXOffset + rect.left`.
-    - Scroll to `Math.round(absX / pw) * pw`.
-    - Re-enable snapping after a short delay to allow the browser to settle.
-- **`prependChapter` (JS)**:
-    - Disable snapping during the `scrollBy` or `scrollToLast` logic to avoid "jumpiness".
-- **`updateProgress` (JS)**:
-    - Improve detection logic: find the section where `rect.left` is between `-pw/2` and `pw/2`.
-    - Use `Math.max(1, Math.round(active.scrollWidth / pw))` for total pages.
-    - Return the actual `spineIndex` back to Kotlin for sync.
+### 2. Update HTML & JavaScript (initPagedView)
+#### [MODIFY] [ReaderActivity.kt](file:///C:/Users/Владелец/AndroidStudioProjects/UniReader/app/src/main/java/com/example/unireader/ReaderActivity.kt)
+- Add `<div id="snap-ribbon"></div>` to the body.
+- Implement `setSnapping(enabled)` to toggle the `scrollSnapType` CSS property.
+- Implement `updateSnapMarkers()` to fill the ribbon based on `scrollWidth / clientWidth`.
+- Call `updateSnapMarkers()` on window `resize` and inside `appendChapter`/`prependChapter`.
+- **Delete** the old manual `performSnap` function and its scroll listener.
 
-### 2. Positioning Restoration Sync
-- Ensure `captureCurrentPosition` accurately reflects the chapter currently seen in the viewport before any mode switch or save.
+### 3. Integrate Snapping Toggles
+#### [MODIFY] [ReaderActivity.kt](file:///C:/Users/Владелец/AndroidStudioProjects/UniReader/app/src/main/java/com/example/unireader/ReaderActivity.kt)
+- In `nextPage()`, `prevPage()`, `syncIdxScroll()`, and `handleInternalLink` (the `sync` part), wrap the `window.scrollTo` calls with `setSnapping(false)` and `setSnapping(true)` to ensure programmatic jumps are precise and not "bounced back" by the snapping engine.
 
 ## Verification Plan
 
 ### Manual Verification
-1. **TOC**: Jump from Chapter 1 to Chapter 50. Verify it lands on Page 1.
-2. **Backward**: Swipe back from Chapter 5 to Chapter 4. Verify it lands on the last page of Chapter 4.
-3. **Progress**: Verify the panel updates correctly on every single page turn.
-4. **Restoration**: Switch modes and verify paragraph-level persistence.
+- Swipe left/right: Verify the page "sticks" perfectly to the 100vw boundaries.
+- TOC Jump: Click a chapter in the TOC. Verify it lands on Page 1 without any visual "fighting".
+- Rotation: Rotate the screen and verify snapping still works for the new width.
+- Mode Toggle: Switch Scroll ↔ Paged and verify your position is preserved.

@@ -370,6 +370,7 @@ class ReaderActivity : AppCompatActivity() {
                 margin: 0; padding: 0; height: 100vh; width: 100vw; 
                 overflow-x: auto; overflow-y: hidden; 
                 -webkit-overflow-scrolling: touch;
+                scroll-snap-type: x mandatory;
             }
             body { 
                 height: 100vh; width: 100vw;
@@ -378,18 +379,34 @@ class ReaderActivity : AppCompatActivity() {
                 column-width: 100vw !important; column-gap: 0 !important;
                 -webkit-column-fill: auto; column-fill: auto;
             }
+            #snap-ribbon {
+                position: absolute; top: 0; left: 0;
+                display: flex; height: 1px; width: 100%;
+                pointer-events: none;
+            }
+            .snap-point {
+                width: 100vw; height: 1px; flex-shrink: 0;
+                scroll-snap-align: start;
+                scroll-snap-stop: always;
+            }
             section {
                 display: block;
                 break-before: column;
                 -webkit-column-break-before: column;
             }
+            * {
+                padding-left: ${halfGapPx}px !important;
+                padding-right: ${halfGapPx}px !important;
+            }
             p, h1, h2, h3, h4, h5, h6, li { 
                 margin: 0 !important;
-                padding: 0 ${halfGapPx}px ${1.2 * settings.paragraphSpacing}em ${halfGapPx}px !important; 
+                padding-top: 0 !important;
+                padding-bottom: ${1.2 * settings.paragraphSpacing}em !important; 
             }
             div {
                 margin: 0 !important;
-                padding: 0 ${halfGapPx}px 0 ${halfGapPx}px !important;
+                padding-top: 0 !important;
+                padding-bottom: 0 !important;
             }
             """.trimIndent()
         } else {
@@ -411,6 +428,10 @@ class ReaderActivity : AppCompatActivity() {
 
         val finalCss = (commonCss + modeCss).replace("\n", " ")
         webView.evaluateJavascript("var style = document.getElementById('reader-style') || document.createElement('style'); style.id = 'reader-style'; style.innerHTML = '$finalCss'; if (!style.parentNode) document.head.appendChild(style);", null)
+        
+        if (isPagedMode) {
+            webView.evaluateJavascript("if (typeof updateSnapMarkers === 'function') updateSnapMarkers();", null)
+        }
     }
 
     fun updateUiState() {
@@ -715,9 +736,11 @@ class ReaderActivity : AppCompatActivity() {
                             var sw = document.documentElement.scrollWidth;
                             if ((target && sw > pw && sw === lastWidth) || retry > 60) {
                                 if (target) {
+                                    setSnapping(false);
                                     var rect = target.getBoundingClientRect();
                                     var pageIndex = Math.floor((window.pageXOffset + rect.left + 5) / pw);
                                     window.scrollTo(pageIndex * pw, 0);
+                                    setTimeout(function() { setSnapping(true); }, 150);
                                 }
                             } else {
                                 lastWidth = sw;
@@ -753,6 +776,7 @@ class ReaderActivity : AppCompatActivity() {
                 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
             </head>
             <body data-mode="paged" style="background-color: $bgColor !important; margin: 0; padding: 0;">
+                <div id="snap-ribbon"></div>
                 <div id="chapters-container"></div>
                 <script>
                     window.addEventListener('scroll', function() {
@@ -776,9 +800,54 @@ class ReaderActivity : AppCompatActivity() {
                         }
                     });
 
+                    function setSnapping(enabled) {
+                        document.documentElement.style.scrollSnapType = enabled ? 'x mandatory' : 'none';
+                    }
+
+                    function updateSnapMarkers() {
+                        var ribbon = document.getElementById('snap-ribbon');
+                        if (!ribbon) return;
+                        var sw = document.documentElement.scrollWidth;
+                        var pw = document.documentElement.clientWidth;
+                        var count = Math.round(sw / pw);
+                        if (isNaN(count) || count === 0) return;
+
+                        ribbon.innerHTML = '';
+                        for (var i = 0; i < count; i++) {
+                            var p = document.createElement('div');
+                            p.className = 'snap-point';
+                            ribbon.appendChild(p);
+                        }
+                    }
+                    window.addEventListener('resize', updateSnapMarkers);
+
+                    function scrollToChapterElement(index, targetIdx, anchor) {
+                        var section = document.getElementById('chapter-' + index);
+                        if (!section) return;
+                        var pw = document.documentElement.clientWidth;
+                        
+                        setSnapping(false);
+                        var target = null;
+                        if (anchor) {
+                            target = document.getElementById(anchor) || document.getElementsByName(anchor)[0];
+                        } else if (targetIdx >= 0) {
+                            target = section.querySelector('[data-idx="' + targetIdx + '"]');
+                        }
+                        
+                        var rect = (target || section).getBoundingClientRect();
+                        var page = Math.floor((window.pageXOffset + rect.left + 5) / pw);
+                        window.scrollTo(page * pw, 0);
+                        
+                        // Increase delay slightly to ensure browser is ready for snapping
+                        setTimeout(function() { setSnapping(true); }, 150);
+                    }
+
                     function appendChapter(index, html, targetIdx, targetOffset, lang, jumpToLast, anchor) {
                         var container = document.getElementById('chapters-container');
-                        if (document.getElementById('chapter-' + index)) return;
+                        if (document.getElementById('chapter-' + index)) {
+                            if (jumpToLast || anchor || targetIdx >= 0) scrollToChapterElement(index, targetIdx, anchor);
+                            return;
+                        }
                         
                         var section = document.createElement('section');
                         section.id = 'chapter-' + index;
@@ -790,6 +859,7 @@ class ReaderActivity : AppCompatActivity() {
                         for (var i=0; i<items.length; i++) items[i].setAttribute('data-idx', i);
                         
                         container.appendChild(section);
+                        updateSnapMarkers();
                         
                         if (jumpToLast || anchor || targetIdx >= 0) {
                             var retry = 0;
@@ -797,25 +867,15 @@ class ReaderActivity : AppCompatActivity() {
                                 var pw = document.documentElement.getBoundingClientRect().width;
                                 var sw = document.documentElement.scrollWidth;
                                 if (sw > pw || retry > 40) {
+                                    setSnapping(false);
                                     if (jumpToLast) {
                                         var rect = section.getBoundingClientRect();
                                         var lastPageInDoc = Math.floor((window.pageXOffset + rect.right - 5) / pw);
                                         window.scrollTo(lastPageInDoc * pw, 0);
-                                    } else if (anchor) {
-                                        var target = document.getElementById(anchor) || document.getElementsByName(anchor)[0];
-                                        if (target) {
-                                            var rect = target.getBoundingClientRect();
-                                            var page = Math.floor((window.pageXOffset + rect.left + 5) / pw);
-                                            window.scrollTo(page * pw, 0);
-                                        }
-                                    } else if (targetIdx >= 0) {
-                                        var target = section.querySelector('[data-idx="' + targetIdx + '"]');
-                                        if (target) {
-                                            var rect = target.getBoundingClientRect();
-                                            var page = Math.floor((window.pageXOffset + rect.left + 5) / pw);
-                                            window.scrollTo(page * pw, 0);
-                                        }
+                                    } else {
+                                        scrollToChapterElement(index, targetIdx, anchor);
                                     }
+                                    setTimeout(function() { setSnapping(true); }, 150);
                                 } else {
                                     retry++;
                                     setTimeout(syncIdxScroll, 50);
@@ -840,7 +900,9 @@ class ReaderActivity : AppCompatActivity() {
                         
                         var oldWidth = document.documentElement.scrollWidth;
                         container.insertBefore(section, container.firstChild);
+                        updateSnapMarkers();
 
+                        setSnapping(false);
                         requestAnimationFrame(function() {
                             var newWidth = document.documentElement.scrollWidth;
                             var pw = document.documentElement.getBoundingClientRect().width;
@@ -850,28 +912,9 @@ class ReaderActivity : AppCompatActivity() {
                             } else {
                                 window.scrollBy(newWidth - oldWidth, 0);
                             }
+                            setTimeout(function() { setSnapping(true); }, 150);
                         });
                     }
-
-                    // SNAP LOGIC (Stable version)
-                    var isSnapping = false;
-                    var scrollTimeout;
-                    function performSnap() {
-                        if (isSnapping) return;
-                        var pw = document.documentElement.getBoundingClientRect().width;
-                        var sl = window.pageXOffset;
-                        var targetPage = Math.round(sl / pw);
-                        if (Math.abs(sl - targetPage * pw) > 1) {
-                            isSnapping = true;
-                            window.scrollTo({ left: targetPage * pw, behavior: 'smooth' });
-                            setTimeout(function() { isSnapping = false; }, 400);
-                        }
-                    }
-                    window.addEventListener('scroll', function() {
-                        if (isSnapping) return;
-                        clearTimeout(scrollTimeout);
-                        scrollTimeout = setTimeout(performSnap, 100);
-                    }, { passive: true });
                 </script>
             </body>
             </html>
@@ -1191,7 +1234,9 @@ class ReaderActivity : AppCompatActivity() {
                 var sl = window.pageXOffset || document.documentElement.scrollLeft;
                 
                 if (sl + pw + 5 < sw) { 
+                    setSnapping(false);
                     window.scrollTo({ left: (Math.round(sl / pw) + 1) * pw, behavior: 'auto' }); 
+                    setTimeout(function() { setSnapping(true); }, 150);
                     return 'ok'; 
                 } 
                 return 'next'; 
@@ -1211,7 +1256,9 @@ class ReaderActivity : AppCompatActivity() {
                 var sl = window.pageXOffset || document.documentElement.scrollLeft;
                 
                 if (sl > 5) { 
+                    setSnapping(false);
                     window.scrollTo({ left: (Math.round(sl / pw) - 1) * pw, behavior: 'auto' });
+                    setTimeout(function() { setSnapping(true); }, 150);
                     return 'ok'; 
                 } 
                 return 'prev'; 
