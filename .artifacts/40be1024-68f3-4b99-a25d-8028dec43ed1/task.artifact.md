@@ -1,6 +1,7 @@
-# Tasks - Robust Paging & Progress Detection
+# Tasks - Robust Positioning & Paging Fix
 
-- `[ ]` Update `applyCurrentSettings` in `ReaderActivity.kt` (CSS & Snap Markers)
-- `[ ]` Update `updateProgress()` in `ReaderActivity.kt` (Robust autonomous detection)
-- `[ ]` Update `initPagedView` in `ReaderActivity.kt` (updateSnapMarkers fixes)
-- `[ ]` Verify layout and page counting accuracy
+- `[x]` Update `updateProgress` and `captureCurrentPosition` (Kotlin/JS)
+- `[x]` Update `handleInternalLink` and TOC jumps
+- `[x]` Update `initPagedView` JS (Absolute coordinates)
+- `[x]` Update `initSeamlessScroll` and Mode switching sync
+- `[ ]` Verify all scenarios (TOC, Paging Back, Mode Toggle)

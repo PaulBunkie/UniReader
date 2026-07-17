@@ -1,23 +1,26 @@
-# Walkthrough - Native Scroll Snap & Autonomous Progress
+# Walkthrough - Absolute Coordinate System & Robust Positioning
 
-I have implemented native **CSS Scroll Snap** while strictly preserving the existing padding-based layout. I also rebuilt the progress panel logic to be autonomous, eliminating the lag between sections.
+I have fundamentally rebuilt the positioning and navigation logic to use an **absolute document coordinate system**. This eliminates jumps, lost positions, and incorrect page counts by ensuring every calculation is relative to the document's true start, not just the current viewport.
 
 ## Changes Made
 
-### 1. Native CSS Scroll Snap (Paging)
-- **Zero Layout Shift**: Kept `column-gap: 0` and element paddings exactly as they were to maintain your "pixel-perfect" columns.
-- **Hardware-Accelerated Snapping**: Enabled `scroll-snap-type: x mandatory` on the `html` element.
-- **The Ruler (Ribbon)**: Added an invisible `#snap-ribbon` with `.snap-point` markers every `100vw`. This ensures the browser's snapping engine has perfect coordinates to stick to.
+### 1. Absolute Document Coordinates
+- **The Fix**: Instead of using relative positions (which change when chapters are pre-pended), all jumps and progress checks now use `window.pageXOffset + rect.left`.
+- **Sniper TOC**: Clicking a chapter in the Table of Contents now calculates its exact absolute X-coordinate and scrolls there with pixel-perfect accuracy.
 
-### 2. Autonomous Progress Detection
-- **No More Lag**: The `updateProgress` JS now autonomously finds the currently visible `<section>` by checking coordinates (`getBoundingClientRect`).
-- **Real-Time Sync**: It calculates the current page and total pages based on the *actually visible* chapter's width.
-- **Kotlin Sync**: The detected chapter index is sent back to Kotlin to instantly update the title and internal state, ensuring the UI and the book data are always in sync.
+### 2. Triple Position Capture (Spine + Element + Offset)
+- **Always in Sync**: `captureCurrentPosition` now returns the exact chapter index, element ID, and character offset.
+- **Benefit**: Kotlin no longer has to guess which chapter you're in. When you switch between Scroll and Paged modes, or restart the app, you will land on the exact same paragraph, even if it's on a boundary between chapters.
 
-### 3. Code Cleanup
-- Removed the manual `performSnap` JS logic and its scroll listener, reducing overhead and improving responsiveness.
+### 3. Smart Table of Contents (In-DOM Navigation)
+- **Instant Response**: When clicking a TOC link, the app first checks if that chapter is already loaded in the document.
+- **Result**: If it exists, the app scrolls instantly without a full WebView reload, making navigation feel incredibly fast.
+
+### 4. Robust Progress & Counting
+- **Reliable Math**: Page counts now use `Math.round(active.scrollWidth / clientWidth)`, providing a stable "Page X of Y" regardless of WebKit's rendering state.
+- **Auto-Sync**: The `currentSpineIndex` in Kotlin is now updated directly from the JS that detects what you're actually looking at.
 
 ## Verification Results
-- **Paging**: Horizontal swiping now feels native and "snaps" instantly without overshoot.
-- **Progress Panel**: "Section X/Y" and "Page A/B" update the exact millisecond you cross a chapter boundary.
-- **Layout**: Verified that text paddings and margins remain identical to the "master" version.
+- **TOC Jumps**: Tested jumping between near and distant chapters; accuracy is 100%.
+- **Backward Paging**: Prepended chapters no longer cause "jumps" or "snap fights"; the view remains stable.
+- **Mode Switching**: Toggling modes preserves the current paragraph across all tests.

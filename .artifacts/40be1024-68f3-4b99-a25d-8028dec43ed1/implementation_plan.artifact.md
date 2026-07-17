@@ -1,36 +1,41 @@
-# Implementation Plan - Fix Progress and Links in Paged Mode
+# Implementation Plan - Final Precision Navigation & Snap Taming
 
-The recent paging improvements caused regressions in page counting and internal link navigation. This plan fixes these by using robust coordinate detection that works correctly with CSS Columns on the `body` element.
+This plan addresses the persistent issues with TOC navigation (jumping to wrong chapters) and progress detection (page numbers not updating). It focuses on isolating programmatic scrolls from the native snap mechanism and using absolute document coordinates.
 
 ## User Review Required
 
 > [!IMPORTANT]
-> - **Page Counting Fix**: Since columns are on the `body`, `section.scrollWidth` is not reliable. We will use `section.getClientRects().length` to accurately count pages in a chapter.
-> - **Link Navigation Fix**: We will update the link/anchor scrolling logic to accurately calculate the target page index regardless of how many chapters are loaded.
-> - **Padding Cleanup**: We will ensure paddings don't interfere with coordinate calculations.
+> - **Snapping Isolation**: We will temporarily disable `scroll-snap-type` during programmatic scrolls (TOC jumps, backward paging). This prevents the browser from "fighting" our `scrollTo` commands.
+> - **Absolute Coordinate Mastery**: Instead of relying on viewport-relative `getBoundingClientRect`, we will use document-relative coordinates (`window.pageXOffset + rect.left`) for all calculations.
+> - **Progress Robustness**: We will simplify chapter detection to use the element closest to the left edge, making it more resilient to rounding errors.
 
 ## Proposed Changes
 
-### Reader UI (WebView Logic)
+### 1. Reader Activity Logic (JS & Kotlin)
 
 #### [MODIFY] [ReaderActivity.kt](file:///C:/Users/Владелец/AndroidStudioProjects/UniReader/app/src/main/java/com/example/unireader/ReaderActivity.kt)
 
-- **Update `updateProgress`**:
-    - Use `active.getClientRects()` to get the total number of pages in the current chapter.
-    - Calculate `currPage` by comparing `window.pageXOffset` with the first rect's `left` coordinate.
-    - This ensures the "Page X of Y" is always accurate.
+- **`updateSnapMarkers` (JS)**:
+    - Add a `setSnapping(enabled)` helper function to toggle `scroll-snap-type` on the `html` element.
+- **`scrollToChapterElement` (JS)**:
+    - Call `setSnapping(false)` before scrolling.
+    - Calculate `absX` using `window.pageXOffset + rect.left`.
+    - Scroll to `Math.round(absX / pw) * pw`.
+    - Re-enable snapping after a short delay to allow the browser to settle.
+- **`prependChapter` (JS)**:
+    - Disable snapping during the `scrollBy` or `scrollToLast` logic to avoid "jumpiness".
+- **`updateProgress` (JS)**:
+    - Improve detection logic: find the section where `rect.left` is between `-pw/2` and `pw/2`.
+    - Use `Math.max(1, Math.round(active.scrollWidth / pw))` for total pages.
+    - Return the actual `spineIndex` back to Kotlin for sync.
 
-- **Update `handleInternalLink` / Anchor Sync**:
-    - Improve the `sync()` function for internal links.
-    - Use `target.getClientRects()[0]` or `getBoundingClientRect()` relative to the document to find the exact page.
-    - Ensure `window.scrollTo` hits the exact multiple of `pw`.
-
-- **CSS Tweak**:
-    - Remove the redundant `section` padding that might be double-applying or shifting the chapter start.
+### 2. Positioning Restoration Sync
+- Ensure `captureCurrentPosition` accurately reflects the chapter currently seen in the viewport before any mode switch or save.
 
 ## Verification Plan
 
 ### Manual Verification
-- **Page Counting**: Swipe through chapters and verify "Page X of Y" updates correctly (e.g., 1/5, 2/5...).
-- **Internal Links**: Click a link in the TOC and verify it jumps to the correct page in the correct chapter.
-- **Anchors**: Verify that jumping to a specific footnote or chapter part works across chapter boundaries.
+1. **TOC**: Jump from Chapter 1 to Chapter 50. Verify it lands on Page 1.
+2. **Backward**: Swipe back from Chapter 5 to Chapter 4. Verify it lands on the last page of Chapter 4.
+3. **Progress**: Verify the panel updates correctly on every single page turn.
+4. **Restoration**: Switch modes and verify paragraph-level persistence.
