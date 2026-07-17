@@ -508,11 +508,9 @@ class ReaderActivity : AppCompatActivity() {
                 if (e1 == null) return false
                 val width = webView.width
                 
-                // Проверяем, начался ли жест в левых 8% экрана
                 if (e1.x < width * 0.08f) {
                     if (!isAdjustingBrightness) {
                         isAdjustingBrightness = true
-                        // Отменяем обработку жеста в WebView, чтобы не включалось выделение текста
                         val cancelEvent = MotionEvent.obtain(e2.downTime, e2.eventTime, MotionEvent.ACTION_CANCEL, e2.x, e2.y, 0)
                         webView.dispatchTouchEvent(cancelEvent)
                         cancelEvent.recycle()
@@ -521,7 +519,6 @@ class ReaderActivity : AppCompatActivity() {
                     var brightness = lp.screenBrightness
                     
                     if (brightness < 0) {
-                        // Если яркость окна не задана, берем системную, чтобы избежать скачка
                         brightness = try {
                             Settings.System.getInt(contentResolver, Settings.System.SCREEN_BRIGHTNESS) / 255f
                         } catch (_: Exception) {
@@ -529,7 +526,6 @@ class ReaderActivity : AppCompatActivity() {
                         }
                     }
                     
-                    // Уменьшаем чувствительность: делим на высоту * 1.5, чтобы свайп был более "вязким" и точным
                     val delta = distanceY / (webView.height * 1.5f)
                     brightness = (brightness + delta).coerceIn(0.01f, 1.0f)
                     
@@ -643,13 +639,10 @@ class ReaderActivity : AppCompatActivity() {
                 isAdjustingBrightness = false
             }
 
-            // Если мы регулируем яркость, перехватываем все события
             if (isAdjustingBrightness) return@setOnTouchListener true
             
-            // Для ACTION_DOWN возвращаем false, чтобы WebView могла обработать возможный клик
             if (event.action == MotionEvent.ACTION_DOWN) return@setOnTouchListener false
             
-            // В постраничном режиме блокируем прокрутку WebView, если жест обработан нами (тап по краям)
             if (isPagedMode) handled else false
         }
     }
@@ -668,7 +661,7 @@ class ReaderActivity : AppCompatActivity() {
                         var href = a.getAttribute('href');
                         if (href.startsWith('#') || href.indexOf('://') === -1 || href.startsWith('epub://')) {
                             e.preventDefault();
-                            var absolute = a.href; // Browser resolves relative to epub://...
+                            var absolute = a.href;
                             AndroidReader.onLinkClicked(absolute);
                         }
                     }
@@ -691,7 +684,7 @@ class ReaderActivity : AppCompatActivity() {
         
         var targetIndex = -1
         
-        // 1. Прямое совпадение
+        // 1. Direct match
         for (i in book.spine.indices) {
             val itemHref = book.spine[i].href
             val fullHref = if (opfDir.isEmpty()) itemHref else "$opfDir/$itemHref".replace("//", "/").replace("\\", "/")
@@ -701,7 +694,7 @@ class ReaderActivity : AppCompatActivity() {
             }
         }
 
-        // 2. Поиск по имени файла (если пути в TOC и OPF расходятся)
+        // 2. Search by filename
         if (targetIndex == -1) {
             val fileName = pathWithoutFragment.substringAfterLast("/")
             for (i in book.spine.indices) {
@@ -909,9 +902,7 @@ class ReaderActivity : AppCompatActivity() {
         pendingAnchor = null
         shouldJumpToLastPage = false
 
-        // 1. Сначала грузим только ЦЕЛЕВУЮ главу
         loadAndAppendChapter(currentSpineIndex, idxToUse, offsetToUse, jumpToLast, anchorToUse) {
-            // 2. Когда она на месте, снимаем блок и грузим соседей
             isJumpingToChapter = false
             loadAndPrependChapter(currentSpineIndex - 1)
             loadAndAppendChapter(currentSpineIndex + 1)
@@ -1224,7 +1215,7 @@ class ReaderActivity : AppCompatActivity() {
                 var sl = window.pageXOffset || document.documentElement.scrollLeft;
                 
                 if (sl > 5) { 
-                    window.scrollTo({ left: (Math.round(sl / pw) - 1) * pw, behavior: 'auto' }); 
+                    window.scrollTo({ left: (Math.round(sl / pw) - 1) * pw, behavior: 'auto' });
                     return 'ok'; 
                 } 
                 return 'prev'; 
