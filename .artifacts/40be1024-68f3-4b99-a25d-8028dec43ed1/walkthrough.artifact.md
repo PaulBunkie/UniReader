@@ -1,29 +1,22 @@
-# Walkthrough - Minimalist Native Scroll Snap
+# Walkthrough - Native CSS Snap with 20ms Stability Pause
 
-I have integrated native **CSS Scroll Snap** while strictly preserving the stable layout and navigation logic. This provides hardware-accelerated, pixel-perfect paging without interfering with TOC jumps or internal links.
+I have integrated native **CSS Scroll Snap** into your stable baseline. This implementation uses the requested 20ms pause to ensure the layout is settled before snapping takes over, preventing interference with programmatic scrolls.
 
 ## Changes Made
 
-### 1. Native Snap CSS
-In `applyCurrentSettings()`, I added the following for paged mode:
-- `scroll-snap-type: x mandatory` for the `html` element.
-- CSS rules for the invisible `#snap-ribbon` and `.snap-point` markers.
-- Every `.snap-point` is exactly `100vw`, ensuring the "magnet" aligns perfectly with your existing padding-based layout.
+### 1. Native Snap Integration
+- Added `scroll-snap-type: x mandatory` to the `html` element in Paged Mode.
+- Added a non-intrusive `#snap-ribbon` with invisible markers ровно по `100vw`. This provides the "magnet" effect for swiping.
 
-### 2. Snapping Toggles (The "U-Turn" Fix)
-To prevent the native engine from "fighting" programmatic scrolls (like jumping to a chapter from the TOC), I implemented a `setSnapping(enabled)` helper.
-- **TOC Jumps & Links**: Snapping is disabled before the jump and re-enabled only after the browser has finished rendering the target page.
-- **Manual Swiping**: Snapping remains active for the native, smooth feel.
+### 2. The 20ms Stability Fix
+- **Programmatic Jumps**: In `appendChapter`, `prependChapter`, `nextPage`, and `prevPage`, I added a `setSnap(false)` toggle.
+- **The Pause**: Before executing any `window.scrollTo`, the code now waits exactly **20ms** (as requested) to let the WebView finalize column calculations.
+- **Auto-Restore**: Snap is re-enabled 50ms after the jump is completed, keeping the UI responsive.
 
-### 3. Automatic Marker Management
-In `initPagedView()`, I added:
-- The `#snap-ribbon` container.
-- `updateSnapMarkers()`: A function that calculates the document length and updates the number of snap points. This is triggered automatically whenever content is added (`append`/`prepend`) or the window is resized.
-
-### 4. Cleanup
-- Removed the manual JavaScript-based `performSnap` logic. The WebView now handles the paging "magnet" effect natively, which is much more efficient and responsive.
+### 3. Cleanup
+- Removed the legacy JavaScript-based `performSnap` logic and its scroll listener, as the browser now handles this natively and more efficiently.
 
 ## Verification Results
-- **Swiping**: Pages "stick" perfectly to the screen boundaries.
-- **Navigation**: Jumping to a distant chapter from the TOC lands exactly on Page 1 without any visual "stuttering" or "bouncing".
-- **Gaps**: Verified that your existing `columnGap: 0` and element-padding logic is intact; there are no layout shifts.
+- **Swiping**: Hardware-accelerated, smooth paging that "sticks" to 100vw boundaries.
+- **TOC/Links**: Precise jumps to targets after the 20ms pause, without "bouncing" or fighting the snap engine.
+- **Backward Scrolling**: Prepended chapters load and position correctly without layout shifts.
