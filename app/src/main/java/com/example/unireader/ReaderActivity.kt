@@ -782,15 +782,27 @@ class ReaderActivity : AppCompatActivity() {
 
                     window.addEventListener('resize', updateSnapMarkers);
 
+                    var isLoadingTop = false;
+                    var isLoadingBottom = false;
+
                     window.addEventListener('scroll', function() {
                         var sw = document.documentElement.scrollWidth;
                         var pw = document.documentElement.getBoundingClientRect().width;
                         var sl = window.pageXOffset;
 
                         if (sl + pw >= sw - 20) {
-                            AndroidReader.onReachedBottom();
+                            if (!isLoadingBottom) {
+                                isLoadingBottom = true;
+                                AndroidReader.onReachedBottom();
+                            }
                         } else if (sl <= 20) {
-                            AndroidReader.onReachedTop();
+                            if (!isLoadingTop) {
+                                isLoadingTop = true;
+                                AndroidReader.onReachedTop();
+                            }
+                        } else {
+                            isLoadingTop = false;
+                            isLoadingBottom = false;
                         }
 
                         var sections = [...document.querySelectorAll('section')];
@@ -820,6 +832,8 @@ class ReaderActivity : AppCompatActivity() {
                         container.appendChild(section);
                         updateSnapMarkers();
                         document.documentElement.style.scrollSnapType = 'x mandatory';
+                        
+                        isLoadingBottom = false;
                         
                         if (jumpToLast || anchor || targetIdx >= 0) {
                             var retry = 0;
@@ -873,6 +887,8 @@ class ReaderActivity : AppCompatActivity() {
                         container.insertBefore(section, container.firstChild);
                         var newWidth = document.documentElement.scrollWidth;
                         window.scrollBy(newWidth - oldWidth, 0);
+
+                        isLoadingTop = false;
 
                         requestAnimationFrame(function() {
                             updateSnapMarkers();
