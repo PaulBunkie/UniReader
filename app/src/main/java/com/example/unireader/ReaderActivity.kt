@@ -867,11 +867,11 @@ class ReaderActivity : AppCompatActivity() {
                         
                         var oldWidth = document.documentElement.scrollWidth;
                         container.insertBefore(section, container.firstChild);
+                        var capturedNewWidth = document.documentElement.scrollWidth;
 
                         requestAnimationFrame(function() {
-                            var newWidth = document.documentElement.scrollWidth;
                             var pw = document.documentElement.getBoundingClientRect().width;
-                            var pagesAdded = Math.round((newWidth - oldWidth) / pw);
+                            var pagesAdded = Math.round((capturedNewWidth - oldWidth) / pw);
                             updateSnapMarkers();
                             if (scrollToLast) {
                                 window.scrollTo((pagesAdded - 1) * pw, 0);
