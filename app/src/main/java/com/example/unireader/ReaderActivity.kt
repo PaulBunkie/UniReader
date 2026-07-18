@@ -56,6 +56,7 @@ class ReaderActivity : AppCompatActivity() {
     private var pendingCharOffset = -1
     private var pendingAnchor: String? = null
     private var isJumpingToChapter = false
+    private var chaptersToLoad = 0
 
     lateinit var settings: ReaderSettings
     private lateinit var gestureDetector: GestureDetector
@@ -815,8 +816,10 @@ class ReaderActivity : AppCompatActivity() {
                         var items = section.querySelectorAll('p, h1, h2, h3, h4, h5, h6, li, img');
                         for (var i=0; i<items.length; i++) items[i].setAttribute('data-idx', i);
                         
+                        document.documentElement.style.scrollSnapType = 'none';
                         container.appendChild(section);
                         updateSnapMarkers();
+                        document.documentElement.style.scrollSnapType = 'x mandatory';
                         
                         if (jumpToLast || anchor || targetIdx >= 0) {
                             var retry = 0;
@@ -865,20 +868,15 @@ class ReaderActivity : AppCompatActivity() {
                         var items = section.querySelectorAll('p, h1, h2, h3, h4, h5, h6, li, img');
                         for (var i=0; i<items.length; i++) items[i].setAttribute('data-idx', i);
                         
+                        document.documentElement.style.scrollSnapType = 'none';
                         var oldWidth = document.documentElement.scrollWidth;
                         container.insertBefore(section, container.firstChild);
-                        var capturedNewWidth = document.documentElement.scrollWidth;
+                        var newWidth = document.documentElement.scrollWidth;
+                        window.scrollBy(newWidth - oldWidth, 0);
 
                         requestAnimationFrame(function() {
-                            var pw = document.documentElement.getBoundingClientRect().width;
-                            var pagesAdded = Math.round((capturedNewWidth - oldWidth) / pw);
                             updateSnapMarkers();
-                            if (scrollToLast) {
-                                window.scrollTo((pagesAdded - 1) * pw, 0);
-                            } else {
-                                var currentPage = Math.round(window.pageXOffset / pw);
-                                window.scrollTo((currentPage + pagesAdded) * pw, 0);
-                            }
+                            document.documentElement.style.scrollSnapType = 'x mandatory';
                         });
                     }
                 </script>
@@ -905,11 +903,19 @@ class ReaderActivity : AppCompatActivity() {
         pendingAnchor = null
         shouldJumpToLastPage = false
 
-        loadAndAppendChapter(currentSpineIndex, idxToUse, offsetToUse, jumpToLast, anchorToUse) {
-            loadAndPrependChapter(currentSpineIndex - 1)
-            loadAndAppendChapter(currentSpineIndex + 1)
-            webView.postDelayed({ isJumpingToChapter = false }, 600)
+        chaptersToLoad = 3
+        isJumpingToChapter = true
+
+        fun onChapterDone() {
+            chaptersToLoad--
+            if (chaptersToLoad <= 0) {
+                isJumpingToChapter = false
+            }
         }
+
+        loadAndAppendChapter(currentSpineIndex, idxToUse, offsetToUse, jumpToLast, anchorToUse) { onChapterDone() }
+        loadAndPrependChapter(currentSpineIndex - 1) { onChapterDone() }
+        loadAndAppendChapter(currentSpineIndex + 1) { onChapterDone() }
     }
 
     private fun initSeamlessScroll() {
@@ -1100,13 +1106,17 @@ class ReaderActivity : AppCompatActivity() {
         }
     }
 
-    private fun loadAndPrependChapter(index: Int, scrollToLast: Boolean = false) {
+    private fun loadAndPrependChapter(index: Int, scrollToLast: Boolean = false, onFinished: (() -> Unit)? = null) {
         val loader = chapterLoader ?: return
-        if (index < 0 || index >= (epubBook?.spine?.size ?: 0) || index >= firstPrependedIndex) return
+        if (index < 0 || index >= (epubBook?.spine?.size ?: 0) || index >= firstPrependedIndex) {
+            onFinished?.invoke()
+            return
+        }
         
         isChapterLoading = true
         val content = loader.loadChapterHtml(index) ?: run {
             isChapterLoading = false
+            onFinished?.invoke()
             return
         }
         
@@ -1115,6 +1125,7 @@ class ReaderActivity : AppCompatActivity() {
         val langArg = if (content.lang != null) "'${content.lang}'" else "null"
         webView.evaluateJavascript("prependChapter($index, `$escapedHtml`, $langArg, $scrollToLast);") {
             isChapterLoading = false
+            onFinished?.invoke()
         }
     }
 
