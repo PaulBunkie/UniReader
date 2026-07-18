@@ -706,6 +706,8 @@ class ReaderActivity : AppCompatActivity() {
         }
 
         if (targetIndex != -1 && targetIndex != currentSpineIndex) {
+            pendingElementIndex = -1
+            pendingCharOffset = -1
             pendingAnchor = fragment
             loadSpineItem(targetIndex)
         } else if (fragment != null) {
@@ -869,13 +871,14 @@ class ReaderActivity : AppCompatActivity() {
                         requestAnimationFrame(function() {
                             var newWidth = document.documentElement.scrollWidth;
                             var pw = document.documentElement.getBoundingClientRect().width;
-                            if (scrollToLast) {
-                                var pages = Math.round((newWidth - oldWidth) / pw);
-                                window.scrollTo((pages - 1) * pw, 0);
-                            } else {
-                                window.scrollBy(newWidth - oldWidth, 0);
-                            }
+                            var pagesAdded = Math.round((newWidth - oldWidth) / pw);
                             updateSnapMarkers();
+                            if (scrollToLast) {
+                                window.scrollTo((pagesAdded - 1) * pw, 0);
+                            } else {
+                                var currentPage = Math.round(window.pageXOffset / pw);
+                                window.scrollTo((currentPage + pagesAdded) * pw, 0);
+                            }
                         });
                     }
                 </script>
@@ -903,9 +906,9 @@ class ReaderActivity : AppCompatActivity() {
         shouldJumpToLastPage = false
 
         loadAndAppendChapter(currentSpineIndex, idxToUse, offsetToUse, jumpToLast, anchorToUse) {
-            isJumpingToChapter = false
             loadAndPrependChapter(currentSpineIndex - 1)
             loadAndAppendChapter(currentSpineIndex + 1)
+            webView.postDelayed({ isJumpingToChapter = false }, 600)
         }
     }
 
