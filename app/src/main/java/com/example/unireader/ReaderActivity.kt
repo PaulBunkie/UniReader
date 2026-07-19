@@ -1,6 +1,7 @@
 package com.example.unireader
 
 import android.annotation.SuppressLint
+import android.util.Log
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
@@ -57,6 +58,7 @@ class ReaderActivity : AppCompatActivity() {
     private var pendingAnchor: String? = null
     private var isJumpingToChapter = false
     private var chaptersToLoad = 0
+    private var isSwipeBlocked = false
 
     lateinit var settings: ReaderSettings
     private lateinit var gestureDetector: GestureDetector
@@ -573,8 +575,11 @@ class ReaderActivity : AppCompatActivity() {
             @Suppress("unused")
             fun onReachedBottom() {
                 runOnUiThread { 
-                    if (!isChapterLoading) {
-                        loadAndAppendChapter(lastAppendedIndex + 1)
+                    Log.d("Reader", "onReachedBottom: lastAppended=$lastAppendedIndex, loading index=${lastAppendedIndex + 1}")
+                    if (!isChapterLoading && !isSwipeBlocked) {
+                        isSwipeBlocked = true
+                        loadAndAppendChapter(lastAppendedIndex + 1, scrollToNew = true)
+                        webView.postDelayed({ isSwipeBlocked = false }, 500)
                     }
                 }
             }
@@ -583,8 +588,11 @@ class ReaderActivity : AppCompatActivity() {
             @Suppress("unused")
             fun onReachedTop() {
                 runOnUiThread {
-                    if (!isChapterLoading) {
-                        loadAndPrependChapter(firstPrependedIndex - 1)
+                    Log.d("Reader", "onReachedTop: firstPrepended=$firstPrependedIndex, loading index=${firstPrependedIndex - 1}")
+                    if (!isChapterLoading && !isSwipeBlocked) {
+                        isSwipeBlocked = true
+                        loadAndPrependChapter(firstPrependedIndex - 1, stayOnCurrent = true)
+                        webView.postDelayed({ isSwipeBlocked = false }, 500)
                     }
                 }
             }
@@ -593,17 +601,13 @@ class ReaderActivity : AppCompatActivity() {
             @Suppress("unused")
             fun onChapterEntered(index: Int) {
                 runOnUiThread {
-                    if (isJumpingToChapter) return@runOnUiThread
+                    Log.d("Reader", "onChapterEntered: index=$index, current=$currentSpineIndex, isJumping=$isJumpingToChapter, isSwipeBlocked=$isSwipeBlocked")
+                    if (isJumpingToChapter || isSwipeBlocked) return@runOnUiThread
                     
                     if (currentSpineIndex != index) {
                         currentSpineIndex = index
                         updateChapterTitle()
                         saveReadingPosition()
-                        
-                        if (isPagedMode) {
-                            loadAndAppendChapter(index + 1)
-                            loadAndPrependChapter(index - 1)
-                        }
                     }
                 }
             }
@@ -634,6 +638,13 @@ class ReaderActivity : AppCompatActivity() {
             }
         }
         webView.setOnTouchListener { _, event ->
+            if (isSwipeBlocked) {
+                if (event.action == MotionEvent.ACTION_DOWN) {
+                    gestureDetector.onTouchEvent(event)
+                }
+                return@setOnTouchListener true
+            }
+            
             val handled = gestureDetector.onTouchEvent(event)
             
             if (event.action == MotionEvent.ACTION_UP || event.action == MotionEvent.ACTION_CANCEL) {
@@ -750,6 +761,7 @@ class ReaderActivity : AppCompatActivity() {
     }
 
     private fun initPagedView() {
+        Log.d("Reader", "initPagedView")
         val isDarkMode = settings.isDarkMode
         val bgColor = if (isDarkMode) "#000000" else "#FFFFFF"
 
@@ -782,42 +794,56 @@ class ReaderActivity : AppCompatActivity() {
 
                     window.addEventListener('resize', updateSnapMarkers);
 
+                    var edgeCheckTimer = null;
                     var isLoadingTop = false;
                     var isLoadingBottom = false;
+                    var wasInContent = false;
 
                     window.addEventListener('scroll', function() {
                         var sw = document.documentElement.scrollWidth;
                         var pw = document.documentElement.getBoundingClientRect().width;
                         var sl = window.pageXOffset;
 
-                        if (sl + pw >= sw - 20) {
-                            if (!isLoadingBottom) {
-                                isLoadingBottom = true;
-                                AndroidReader.onReachedBottom();
-                            }
-                        } else if (sl <= 20) {
-                            if (!isLoadingTop) {
-                                isLoadingTop = true;
-                                AndroidReader.onReachedTop();
-                            }
-                        } else {
-                            isLoadingTop = false;
-                            isLoadingBottom = false;
-                        }
-
                         var sections = [...document.querySelectorAll('section')];
-                        var active = sections.find(s => {
+                        var active = sections.find(function(s) {
                             var r = s.getBoundingClientRect();
                             return r.left <= 20 && r.right > 20;
                         });
                         if (active) {
+                            var page = pw > 0 ? Math.floor((sl + 5) / pw) : 0;
+                            console.log('SCROLL: section=' + active.getAttribute('data-index') + ' page=' + page + ' sl=' + sl + ' sw=' + sw);
                             AndroidReader.onChapterEntered(parseInt(active.getAttribute('data-index')));
                         }
+
+                        clearTimeout(edgeCheckTimer);
+                        edgeCheckTimer = setTimeout(function() {
+                            var sw2 = document.documentElement.scrollWidth;
+                            var pw2 = document.documentElement.getBoundingClientRect().width;
+                            var sl2 = window.pageXOffset;
+                            console.log('EDGE_TIMER: sl=' + sl2 + ' sw=' + sw2 + ' pw=' + pw2);
+
+                            if (sl2 <= 20) {
+                                if (!isLoadingTop && wasInContent) {
+                                    isLoadingTop = true;
+                                    AndroidReader.onReachedTop();
+                                }
+                            } else if (sl2 + pw2 >= sw2 - 20) {
+                                if (!isLoadingBottom && wasInContent) {
+                                    isLoadingBottom = true;
+                                    AndroidReader.onReachedBottom();
+                                }
+                            } else if (sl2 > pw2) {
+                                isLoadingTop = false;
+                                isLoadingBottom = false;
+                                wasInContent = true;
+                            }
+                        }, 700);
                     });
 
-                    function appendChapter(index, html, targetIdx, targetOffset, lang, jumpToLast, anchor) {
+                    function appendChapter(index, html, targetIdx, targetOffset, lang, jumpToLast, anchor, scrollToNew) {
                         var container = document.getElementById('chapters-container');
                         if (document.getElementById('chapter-' + index)) return;
+                        console.log('APPEND: index=' + index + ' containerLen=' + container.children.length);
                         
                         var section = document.createElement('section');
                         section.id = 'chapter-' + index;
@@ -830,10 +856,11 @@ class ReaderActivity : AppCompatActivity() {
                         
                         document.documentElement.style.scrollSnapType = 'none';
                         container.appendChild(section);
+                        while (container.children.length > 3) {
+                            container.removeChild(container.firstChild);
+                        }
                         updateSnapMarkers();
                         document.documentElement.style.scrollSnapType = 'x mandatory';
-                        
-                        isLoadingBottom = false;
                         
                         if (jumpToLast || anchor || targetIdx >= 0) {
                             var retry = 0;
@@ -866,12 +893,19 @@ class ReaderActivity : AppCompatActivity() {
                                 }
                             }
                             syncIdxScroll();
+                        } else if (scrollToNew) {
+                            var pw = document.documentElement.getBoundingClientRect().width;
+                            window.scrollTo(window.pageXOffset + section.getBoundingClientRect().left, 0);
                         }
+                        isLoadingTop = false;
+                        isLoadingBottom = false;
+                        clearTimeout(edgeCheckTimer);
                     }
 
-                    function prependChapter(index, html, lang, scrollToLast) {
+                    function prependChapter(index, html, lang, goToNew, keepIndex) {
                         var container = document.getElementById('chapters-container');
                         if (document.getElementById('chapter-' + index)) return;
+                        console.log('PREPEND: index=' + index + ' containerLen=' + container.children.length);
                         
                         var section = document.createElement('section');
                         section.id = 'chapter-' + index;
@@ -885,14 +919,36 @@ class ReaderActivity : AppCompatActivity() {
                         document.documentElement.style.scrollSnapType = 'none';
                         var oldWidth = document.documentElement.scrollWidth;
                         container.insertBefore(section, container.firstChild);
+                        while (container.children.length > 3) {
+                            container.removeChild(container.lastChild);
+                        }
                         var newWidth = document.documentElement.scrollWidth;
-                        window.scrollBy(newWidth - oldWidth, 0);
+                        clearTimeout(edgeCheckTimer);
 
+                        if (keepIndex >= 0) {
+                            var pw = document.documentElement.getBoundingClientRect().width;
+                            var keptSection = document.querySelector('section[data-index="' + keepIndex + '"]');
+                            if (keptSection) {
+                                window.scrollTo(window.pageXOffset + keptSection.getBoundingClientRect().left, 0);
+                            } else {
+                                window.scrollBy(newWidth - oldWidth, 0);
+                            }
+                        } else if (goToNew) {
+                            var pw = document.documentElement.getBoundingClientRect().width;
+                            var rect = section.getBoundingClientRect();
+                            var lastPage = Math.floor((window.pageXOffset + rect.right - 5) / pw);
+                            window.scrollTo(lastPage * pw, 0);
+                        } else {
+                            window.scrollBy(newWidth - oldWidth, 0);
+                        }
                         isLoadingTop = false;
+                        isLoadingBottom = false;
 
                         requestAnimationFrame(function() {
-                            updateSnapMarkers();
-                            document.documentElement.style.scrollSnapType = 'x mandatory';
+                            requestAnimationFrame(function() {
+                                updateSnapMarkers();
+                                document.documentElement.style.scrollSnapType = 'x mandatory';
+                            });
                         });
                     }
                 </script>
@@ -1090,15 +1146,18 @@ class ReaderActivity : AppCompatActivity() {
     }
 
     private fun loadAndAppendChapter(
-        index: Int, 
-        targetIdx: Int = -1, 
-        targetOffset: Int = -1, 
-        jumpToLast: Boolean = false, 
+        index: Int,
+        targetIdx: Int = -1,
+        targetOffset: Int = -1,
+        jumpToLast: Boolean = false,
         anchor: String? = null,
+        scrollToNew: Boolean = false,
         onFinished: (() -> Unit)? = null
     ) {
+        Log.d("Reader", "loadAndAppendChapter: index=$index, lastAppended=$lastAppendedIndex, spineSize=${epubBook?.spine?.size}")
         val loader = chapterLoader ?: return
         if (index < 0 || index >= (epubBook?.spine?.size ?: 0) || index <= lastAppendedIndex) {
+            Log.d("Reader", "loadAndAppendChapter SKIPPED: index=$index out of range or already loaded")
             onFinished?.invoke()
             return
         }
@@ -1116,13 +1175,14 @@ class ReaderActivity : AppCompatActivity() {
         val escapedHtml = content.html.replace("`", "\\`").replace("$", "\\$")
         val langArg = if (content.lang != null) "'${content.lang}'" else "null"
         val anchorArg = if (anchor != null) "'$anchor'" else "null"
-        webView.evaluateJavascript("appendChapter($index, `$escapedHtml`, $targetIdx, $targetOffset, $langArg, $jumpToLast, $anchorArg);") {
+        val scrollToNewArg = scrollToNew.toString()
+        webView.evaluateJavascript("appendChapter($index, `$escapedHtml`, $targetIdx, $targetOffset, $langArg, $jumpToLast, $anchorArg, $scrollToNewArg);") {
             isChapterLoading = false
             onFinished?.invoke()
         }
     }
 
-    private fun loadAndPrependChapter(index: Int, scrollToLast: Boolean = false, onFinished: (() -> Unit)? = null) {
+    private fun loadAndPrependChapter(index: Int, stayOnCurrent: Boolean = false, onFinished: (() -> Unit)? = null) {
         val loader = chapterLoader ?: return
         if (index < 0 || index >= (epubBook?.spine?.size ?: 0) || index >= firstPrependedIndex) {
             onFinished?.invoke()
@@ -1139,7 +1199,9 @@ class ReaderActivity : AppCompatActivity() {
         firstPrependedIndex = index
         val escapedHtml = content.html.replace("`", "\\`").replace("$", "\\$")
         val langArg = if (content.lang != null) "'${content.lang}'" else "null"
-        webView.evaluateJavascript("prependChapter($index, `$escapedHtml`, $langArg, $scrollToLast);") {
+        val goToNewArg = stayOnCurrent.toString()
+        val keepIndexArg = if (stayOnCurrent) currentSpineIndex.toString() else "-1"
+        webView.evaluateJavascript("prependChapter($index, `$escapedHtml`, $langArg, $goToNewArg, $keepIndexArg);") {
             isChapterLoading = false
             onFinished?.invoke()
         }
@@ -1155,7 +1217,7 @@ class ReaderActivity : AppCompatActivity() {
 
     private fun loadPrevSpineItem() {
         if (isPagedMode) {
-            loadAndPrependChapter(firstPrependedIndex - 1, scrollToLast = true)
+                loadAndPrependChapter(firstPrependedIndex - 1, stayOnCurrent = true)
         } else if (currentSpineIndex > 0) {
             loadSpineItem(currentSpineIndex - 1, jumpToLast = true)
         }
