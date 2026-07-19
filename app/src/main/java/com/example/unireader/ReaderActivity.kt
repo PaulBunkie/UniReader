@@ -578,7 +578,7 @@ class ReaderActivity : AppCompatActivity() {
                     Log.d("Reader", "onReachedBottom: lastAppended=$lastAppendedIndex, loading index=${lastAppendedIndex + 1}")
                     if (!isChapterLoading && !isSwipeBlocked) {
                         isSwipeBlocked = true
-                        loadAndAppendChapter(lastAppendedIndex + 1, scrollToNew = true)
+                        loadAndAppendChapter(lastAppendedIndex + 1, stickToCurrent = true)
                         webView.postDelayed({ isSwipeBlocked = false }, 500)
                     }
                 }
@@ -840,7 +840,7 @@ class ReaderActivity : AppCompatActivity() {
                         }, 700);
                     });
 
-                    function appendChapter(index, html, targetIdx, targetOffset, lang, jumpToLast, anchor, scrollToNew) {
+                    function appendChapter(index, html, targetIdx, targetOffset, lang, jumpToLast, anchor, scrollToNew, stickToIndex) {
                         var container = document.getElementById('chapters-container');
                         if (document.getElementById('chapter-' + index)) return;
                         console.log('APPEND: index=' + index + ' containerLen=' + container.children.length);
@@ -896,6 +896,14 @@ class ReaderActivity : AppCompatActivity() {
                         } else if (scrollToNew) {
                             var pw = document.documentElement.getBoundingClientRect().width;
                             window.scrollTo(window.pageXOffset + section.getBoundingClientRect().left, 0);
+                        } else if (stickToIndex >= 0) {
+                            var pw = document.documentElement.getBoundingClientRect().width;
+                            var keptSection = document.querySelector('section[data-index="' + stickToIndex + '"]');
+                            if (keptSection) {
+                                var rect = keptSection.getBoundingClientRect();
+                                var lastPage = Math.floor((window.pageXOffset + rect.right - 5) / pw);
+                                window.scrollTo(lastPage * pw, 0);
+                            }
                         }
                         isLoadingTop = false;
                         isLoadingBottom = false;
@@ -1152,6 +1160,7 @@ class ReaderActivity : AppCompatActivity() {
         jumpToLast: Boolean = false,
         anchor: String? = null,
         scrollToNew: Boolean = false,
+        stickToCurrent: Boolean = false,
         onFinished: (() -> Unit)? = null
     ) {
         Log.d("Reader", "loadAndAppendChapter: index=$index, lastAppended=$lastAppendedIndex, spineSize=${epubBook?.spine?.size}")
@@ -1176,7 +1185,8 @@ class ReaderActivity : AppCompatActivity() {
         val langArg = if (content.lang != null) "'${content.lang}'" else "null"
         val anchorArg = if (anchor != null) "'$anchor'" else "null"
         val scrollToNewArg = scrollToNew.toString()
-        webView.evaluateJavascript("appendChapter($index, `$escapedHtml`, $targetIdx, $targetOffset, $langArg, $jumpToLast, $anchorArg, $scrollToNewArg);") {
+        val stickToIndexArg = if (stickToCurrent) currentSpineIndex.toString() else "-1"
+        webView.evaluateJavascript("appendChapter($index, `$escapedHtml`, $targetIdx, $targetOffset, $langArg, $jumpToLast, $anchorArg, $scrollToNewArg, $stickToIndexArg);") {
             isChapterLoading = false
             onFinished?.invoke()
         }
@@ -1209,7 +1219,7 @@ class ReaderActivity : AppCompatActivity() {
 
     private fun loadNextSpineItem() {
         if (isPagedMode) {
-            loadAndAppendChapter(lastAppendedIndex + 1, targetIdx = 0)
+            loadAndAppendChapter(lastAppendedIndex + 1, stickToCurrent = true)
         } else if (currentSpineIndex < (epubBook?.spine?.size ?: 0) - 1) {
             loadSpineItem(currentSpineIndex + 1, jumpToLast = false)
         }
