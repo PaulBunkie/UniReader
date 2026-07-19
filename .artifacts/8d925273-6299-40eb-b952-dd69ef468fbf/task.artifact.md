@@ -1,0 +1,6 @@
+- [x] Create `activity_image_viewer.xml`
+- [x] Create `ImageViewerActivity.kt` with separate WebView and built-in zoom
+- [x] Register `ImageViewerActivity` in `AndroidManifest.xml`
+- [x] Clean up `ReaderActivity.kt`: revert JS overlay and complex logic
+- [x] Implement `AndroidReader.openImage(src)` in Kotlin
+- [x] Verify smooth zoom and position stability

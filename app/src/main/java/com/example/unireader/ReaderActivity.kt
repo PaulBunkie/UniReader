@@ -2,6 +2,7 @@ package com.example.unireader
 
 import android.annotation.SuppressLint
 import android.util.Log
+import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
@@ -18,6 +19,7 @@ import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.TextView
+import androidx.activity.OnBackPressedCallback
 import androidx.annotation.Keep
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.Toolbar
@@ -109,6 +111,14 @@ class ReaderActivity : AppCompatActivity() {
         setupWebView()
         setupGestures()
 
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                isEnabled = false
+                onBackPressedDispatcher.onBackPressed()
+                isEnabled = true
+            }
+        })
+
         // STATE RESTORATION
         val uriString = savedInstanceState?.getString("epub_uri") ?: intent.getStringExtra("epub_uri")
         currentSpineIndex = savedInstanceState?.getInt("spine_index", 0) ?: 0
@@ -170,7 +180,9 @@ class ReaderActivity : AppCompatActivity() {
         val book = epubBook ?: return
         if (currentSpineIndex < book.spine.size) {
             val item = book.spine[currentSpineIndex]
-            findViewById<TextView>(R.id.tvChapterTitle)?.text = item.href
+            val href = item.href
+            val tocTitle = book.toc.find { it.href == href || href.endsWith(it.href) || it.href.endsWith(href) }?.title
+            findViewById<TextView>(R.id.tvChapterTitle)?.text = tocTitle ?: href
         }
     }
 
@@ -490,7 +502,9 @@ class ReaderActivity : AppCompatActivity() {
                 val x = e.x
 
                 val hr = webView.hitTestResult
-                if ((hr.type == WebView.HitTestResult.SRC_ANCHOR_TYPE) || (hr.type == WebView.HitTestResult.SRC_IMAGE_ANCHOR_TYPE)) {
+                if ((hr.type == WebView.HitTestResult.SRC_ANCHOR_TYPE) || 
+                    (hr.type == WebView.HitTestResult.SRC_IMAGE_ANCHOR_TYPE) ||
+                    (hr.type == WebView.HitTestResult.IMAGE_TYPE)) {
                     return false
                 }
 
@@ -624,6 +638,19 @@ class ReaderActivity : AppCompatActivity() {
                     findViewById<TextView>(R.id.tvProgressPlaceholder)?.text = text
                 }
             }
+
+            @Keep
+            @JavascriptInterface
+            @Suppress("unused")
+            fun openImage(src: String) {
+                runOnUiThread {
+                    val intent = Intent(this@ReaderActivity, ImageViewerActivity::class.java).apply {
+                        putExtra("book_uri", epubBook?.uri.toString())
+                        putExtra("image_url", src)
+                    }
+                    startActivity(intent)
+                }
+            }
         }, "AndroidReader",)
 
         webView.webViewClient = object : WebViewClient() {
@@ -640,8 +667,8 @@ class ReaderActivity : AppCompatActivity() {
             }
             override fun onPageFinished(view: WebView?, url: String?) { 
                 applyCurrentSettings()
+                injectIndexingScript()
                 if (isPagedMode) {
-                    injectIndexingScript()
                     loadInitialPagedChapters()
                 }
                 
@@ -681,6 +708,13 @@ class ReaderActivity : AppCompatActivity() {
                 }
                 
                 document.body.addEventListener('click', function(e) {
+                    var img = e.target.closest('img');
+                    if (img && img.getAttribute('src')) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        AndroidReader.openImage(img.getAttribute('src'));
+                        return;
+                    }
                     var a = e.target.closest('a');
                     if (a && a.getAttribute('href')) {
                         var href = a.getAttribute('href');

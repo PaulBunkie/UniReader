@@ -26,6 +26,11 @@
             android:name=".ReaderActivity"
             android:theme="@style/Theme.UniReader"
             android:configChanges="orientation|screenSize|keyboardHidden" />
+        <activity
+            android:name=".ImageViewerActivity"
+            android:theme="@style/Theme.UniReader"
+            android:screenOrientation="unspecified"
+            android:configChanges="orientation|screenSize" />
     </application>
 
 </manifest>
