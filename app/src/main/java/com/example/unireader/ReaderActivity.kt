@@ -3,6 +3,7 @@ package com.example.unireader
 import android.annotation.SuppressLint
 import android.util.Log
 import android.content.Intent
+import android.content.res.Configuration
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
@@ -211,11 +212,25 @@ class ReaderActivity : AppCompatActivity() {
     }
 
     fun toggleFullscreenExternally(enabled: Boolean) {
-        isFullscreenPref = enabled
-        isUiOverlayVisible = !isFullscreenPref
-        settings.isFullscreen = enabled
-        settings.save(this)
-        updateUiState()
+        if (isPagedMode) {
+            captureCurrentPosition { pos ->
+                isFullscreenPref = enabled
+                isUiOverlayVisible = !isFullscreenPref
+                settings.isFullscreen = enabled
+                settings.save(this)
+                updateUiState()
+                
+                webView.postDelayed({
+                    webView.evaluateJavascript("if (typeof scrollToPosition === 'function') scrollToPosition(${pos.first}, ${pos.second}, ${pos.third});", null)
+                }, 300)
+            }
+        } else {
+            isFullscreenPref = enabled
+            isUiOverlayVisible = !isFullscreenPref
+            settings.isFullscreen = enabled
+            settings.save(this)
+            updateUiState()
+        }
     }
 
     fun setReadingMode(paged: Boolean) {
@@ -226,8 +241,9 @@ class ReaderActivity : AppCompatActivity() {
             settings.isPagedMode = paged
             settings.save(this)
             
-            pendingElementIndex = pos.first
-            pendingCharOffset = pos.second
+            if (pos.first >= 0) currentSpineIndex = pos.first
+            pendingElementIndex = pos.second
+            pendingCharOffset = pos.third
             
             if (!isPagedMode) {
                 initSeamlessScroll()
@@ -243,15 +259,29 @@ class ReaderActivity : AppCompatActivity() {
         saveReadingPosition()
     }
 
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        if (isPagedMode) {
+            captureCurrentPosition { pos ->
+                // Wait for layout to settle after orientation change
+                webView.postDelayed({
+                    updateUiState() // Ensure margins are correct
+                    webView.evaluateJavascript("if (typeof scrollToPosition === 'function') scrollToPosition(${pos.first}, ${pos.second}, ${pos.third});", null)
+                }, 500)
+            }
+        }
+    }
+
     private fun saveReadingPosition() {
         val uri = intent.getStringExtra("epub_uri") ?: return
         captureCurrentPosition { pos ->
             val libraryProvider = LibraryProvider(this)
-            libraryProvider.updateBookProgress(uri, currentSpineIndex, pos.first, pos.second, null)
+            val finalSpineIdx = if (pos.first >= 0) pos.first else currentSpineIndex
+            libraryProvider.updateBookProgress(uri, finalSpineIdx, pos.second, pos.third, null)
         }
     }
 
-    private fun captureCurrentPosition(onCaptured: (Pair<Int, Int>) -> Unit) {
+    private fun captureCurrentPosition(onCaptured: (Triple<Int, Int, Int>) -> Unit) {
         val js = """
             (function() {
                 function getTextOffset(node, target) {
@@ -265,10 +295,8 @@ class ReaderActivity : AppCompatActivity() {
                 }
 
                 var pw = window.innerWidth;
-                var sl = window.pageXOffset || 0;
                 var mode = document.body.getAttribute('data-mode') || 'scroll';
                 
-                // For paged mode, we scan the viewport
                 var startY = 60; 
                 var endY = 500;
                 
@@ -276,34 +304,33 @@ class ReaderActivity : AppCompatActivity() {
                     var found = document.elementFromPoint(pw / 2, y);
                     if (!found) continue;
                     
+                    var section = found.closest('section');
+                    var chapterIdx = section ? parseInt(section.getAttribute('data-index')) : -1;
+                    
                     var target = found.closest('p, h1, h2, h3, h4, h5, h6, li, img');
                     if (!target || !target.hasAttribute('data-idx')) continue;
                     
                     if (target.tagName.toLowerCase() === 'img') {
-                        return JSON.stringify({idx: parseInt(target.getAttribute('data-idx')), offset: -1});
+                        return JSON.stringify({c: chapterIdx, idx: parseInt(target.getAttribute('data-idx')), offset: -1});
                     }
                     
-                    // Precise line detection using Range API
                     var range = document.caretRangeFromPoint(pw / 2, y);
                     if (range) {
                         var node = range.startContainer;
                         var localOffset = range.startOffset;
                         
-                        // We want the start of the LINE containing this point
                         var lineRange = document.createRange();
                         lineRange.setStart(node, localOffset);
                         lineRange.setEnd(node, localOffset);
                         var rects = lineRange.getClientRects();
                         if (rects.length > 0) {
                             var targetLeft = rects[0].left;
-                            // Search backwards in the same node to find where the line starts
                             var searchOffset = localOffset;
                             while (searchOffset > 0) {
                                 lineRange.setStart(node, searchOffset - 1);
                                 lineRange.setEnd(node, searchOffset);
                                 var r = lineRange.getClientRects();
                                 if (r.length > 0 && Math.abs(r[0].left - targetLeft) > 10) {
-                                    // Found a break or significant shift
                                     break;
                                 }
                                 searchOffset--;
@@ -312,18 +339,21 @@ class ReaderActivity : AppCompatActivity() {
                         }
 
                         var globalOffset = getTextOffset(node, target) + localOffset;
-                        return JSON.stringify({idx: parseInt(target.getAttribute('data-idx')), offset: globalOffset});
+                        return JSON.stringify({c: chapterIdx, idx: parseInt(target.getAttribute('data-idx')), offset: globalOffset});
                     }
                 }
-                return JSON.stringify({idx: -1, offset: -1});
+                return JSON.stringify({c: -1, idx: -1, offset: -1});
             })();
         """.trimIndent()
         webView.evaluateJavascript(js) {
             try {
                 val json = org.json.JSONObject(it.trim('"').replace("\\\"", "\""))
-                onCaptured(Pair(json.optInt("idx", -1), json.optInt("offset", -1)))
+                val c = json.optInt("c", -1)
+                val idx = json.optInt("idx", -1)
+                val off = json.optInt("offset", -1)
+                onCaptured(Triple(c, idx, off))
             } catch (_: Exception) {
-                onCaptured(Pair(-1, -1))
+                onCaptured(Triple(-1, -1, -1))
             }
         }
     }
@@ -511,7 +541,22 @@ class ReaderActivity : AppCompatActivity() {
                 when {
                     (x < width * 0.3) -> if (isPagedMode) prevPage()
                     (x > width * 0.7) -> if (isPagedMode) nextPage()
-                    else -> if (isFullscreenPref) { isUiOverlayVisible = !isUiOverlayVisible; updateUiState() }
+                    else -> {
+                        if (isFullscreenPref) {
+                            if (isPagedMode) {
+                                captureCurrentPosition { pos ->
+                                    isUiOverlayVisible = !isUiOverlayVisible
+                                    updateUiState()
+                                    webView.postDelayed({
+                                        webView.evaluateJavascript("if (typeof scrollToPosition === 'function') scrollToPosition(${pos.first}, ${pos.second}, ${pos.third});", null)
+                                    }, 300)
+                                }
+                            } else {
+                                isUiOverlayVisible = !isUiOverlayVisible
+                                updateUiState()
+                            }
+                        }
+                    }
                 }
                 return true
             }
@@ -931,9 +976,37 @@ class ReaderActivity : AppCompatActivity() {
                                     } else if (targetIdx >= 0) {
                                         var target = section.querySelector('[data-idx="' + targetIdx + '"]');
                                         if (target) {
-                                            var rect = target.getBoundingClientRect();
-                                            var page = Math.floor((window.pageXOffset + rect.left + 5) / pw);
-                                            window.scrollTo(page * pw, 0);
+                                            if (targetOffset > 0) {
+                                                var current = 0;
+                                                var foundNode = null;
+                                                var localOffset = 0;
+                                                var walker = document.createTreeWalker(target, NodeFilter.SHOW_TEXT, null, false);
+                                                while (walker.nextNode()) {
+                                                    var len = walker.currentNode.textContent.length;
+                                                    if (current + len >= targetOffset) {
+                                                        foundNode = walker.currentNode;
+                                                        localOffset = targetOffset - current;
+                                                        break;
+                                                    }
+                                                    current += len;
+                                                }
+                                                if (foundNode) {
+                                                    var range = document.createRange();
+                                                    range.setStart(foundNode, localOffset);
+                                                    range.setEnd(foundNode, Math.min(localOffset + 1, foundNode.textContent.length));
+                                                    var rect = range.getBoundingClientRect();
+                                                    var page = Math.floor((window.pageXOffset + rect.left + 5) / pw);
+                                                    window.scrollTo(page * pw, 0);
+                                                } else {
+                                                    var rect = target.getBoundingClientRect();
+                                                    var page = Math.floor((window.pageXOffset + rect.left + 5) / pw);
+                                                    window.scrollTo(page * pw, 0);
+                                                }
+                                            } else {
+                                                var rect = target.getBoundingClientRect();
+                                                var page = Math.floor((window.pageXOffset + rect.left + 5) / pw);
+                                                window.scrollTo(page * pw, 0);
+                                            }
                                         }
                                     }
                                 } else {
@@ -1007,6 +1080,58 @@ class ReaderActivity : AppCompatActivity() {
                                 document.documentElement.style.scrollSnapType = 'x mandatory';
                             });
                         });
+                    }
+
+                    function scrollToPosition(chapterIdx, targetIdx, targetOffset) {
+                        var section = document.getElementById('chapter-' + chapterIdx);
+                        if (!section) return;
+                        
+                        var pw = document.documentElement.getBoundingClientRect().width;
+                        if (pw <= 0) return;
+
+                        if (targetIdx >= 0) {
+                            var target = section.querySelector('[data-idx="' + targetIdx + '"]');
+                            if (target) {
+                                if (targetOffset > 0) {
+                                    var current = 0;
+                                    var foundNode = null;
+                                    var localOffset = 0;
+                                    var walker = document.createTreeWalker(target, NodeFilter.SHOW_TEXT, null, false);
+                                    while (walker.nextNode()) {
+                                        var len = walker.currentNode.textContent.length;
+                                        if (current + len >= targetOffset) {
+                                            foundNode = walker.currentNode;
+                                            localOffset = targetOffset - current;
+                                            break;
+                                        }
+                                        current += len;
+                                    }
+                                    if (foundNode) {
+                                        var range = document.createRange();
+                                        range.setStart(foundNode, localOffset);
+                                        range.setEnd(foundNode, Math.min(localOffset + 1, foundNode.textContent.length));
+                                        var rect = range.getBoundingClientRect();
+                                        // We need to disable snap before scrolling to be sure
+                                        document.documentElement.style.scrollSnapType = 'none';
+                                        var page = Math.floor((window.pageXOffset + rect.left + 5) / pw);
+                                        window.scrollTo(page * pw, 0);
+                                        document.documentElement.style.scrollSnapType = 'x mandatory';
+                                    } else {
+                                        var rect = target.getBoundingClientRect();
+                                        document.documentElement.style.scrollSnapType = 'none';
+                                        var page = Math.floor((window.pageXOffset + rect.left + 5) / pw);
+                                        window.scrollTo(page * pw, 0);
+                                        document.documentElement.style.scrollSnapType = 'x mandatory';
+                                    }
+                                } else {
+                                    var rect = target.getBoundingClientRect();
+                                    document.documentElement.style.scrollSnapType = 'none';
+                                    var page = Math.floor((window.pageXOffset + rect.left + 5) / pw);
+                                    window.scrollTo(page * pw, 0);
+                                    document.documentElement.style.scrollSnapType = 'x mandatory';
+                                }
+                            }
+                        }
                     }
                 </script>
             </body>
