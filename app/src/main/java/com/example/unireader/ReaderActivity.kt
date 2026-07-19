@@ -611,6 +611,19 @@ class ReaderActivity : AppCompatActivity() {
                     }
                 }
             }
+            @Keep
+            @JavascriptInterface
+            @Suppress("unused")
+            fun onProgressUpdate(section: Int, page: Int, totalPages: Int) {
+                runOnUiThread {
+                    val spineSize = epubBook?.spine?.size ?: 1
+                    val sectionProgress = section.toFloat() / spineSize
+                    val pageProgress = if (totalPages > 0) (page.toFloat() / totalPages) / spineSize else 0f
+                    val percent = ((sectionProgress + pageProgress) * 100).toInt().coerceIn(0, 100)
+                    val text = "Секция ${section + 1}/$spineSize · Стр ${page + 1}/$totalPages · $percent%"
+                    findViewById<TextView>(R.id.tvProgressPlaceholder)?.text = text
+                }
+            }
         }, "AndroidReader",)
 
         webView.webViewClient = object : WebViewClient() {
@@ -811,8 +824,10 @@ class ReaderActivity : AppCompatActivity() {
                         });
                         if (active) {
                             var page = pw > 0 ? Math.floor((sl + 5) / pw) : 0;
+                            var totalPages = pw > 0 ? Math.round(sw / pw) : 0;
                             console.log('SCROLL: section=' + active.getAttribute('data-index') + ' page=' + page + ' sl=' + sl + ' sw=' + sw);
                             AndroidReader.onChapterEntered(parseInt(active.getAttribute('data-index')));
+                            AndroidReader.onProgressUpdate(parseInt(active.getAttribute('data-index')), page, totalPages);
                         }
 
                         clearTimeout(edgeCheckTimer);
