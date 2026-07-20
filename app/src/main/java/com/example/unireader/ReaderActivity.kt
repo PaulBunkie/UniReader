@@ -20,6 +20,8 @@ import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.TextView
+import org.json.JSONObject
+import org.json.JSONArray
 import androidx.activity.OnBackPressedCallback
 import androidx.annotation.Keep
 import androidx.appcompat.app.AppCompatActivity
@@ -65,6 +67,7 @@ class ReaderActivity : AppCompatActivity() {
 
     lateinit var settings: ReaderSettings
     private lateinit var gestureDetector: GestureDetector
+    private lateinit var highlightDb: HighlightDatabase
     private var isAdjustingBrightness = false
     
     private val hideBrightnessRunnable = Runnable { 
@@ -73,6 +76,7 @@ class ReaderActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         settings = ReaderSettings.load(this)
+        highlightDb = HighlightDatabase(this)
         
         super.onCreate(savedInstanceState)
         
@@ -406,6 +410,16 @@ class ReaderActivity : AppCompatActivity() {
             }
             * { max-width: 100% !important; box-sizing: border-box !important; }
             img { display: block; max-width: 100% !important; max-height: 80vh !important; margin: 10px auto !important; object-fit: contain; }
+            
+            mark.uni-highlight {
+                background-color: #ffeb3b !important;
+                color: #000 !important;
+                border-radius: 2px;
+            }
+            [data-theme="dark"] mark.uni-highlight {
+                background-color: #f57f17 !important;
+                color: #fff !important;
+            }
         """.trimIndent()
 
         val modeCss = if (isPagedMode) {
@@ -467,7 +481,16 @@ class ReaderActivity : AppCompatActivity() {
         }
 
         val finalCss = (commonCss + modeCss).replace("\n", " ")
-        webView.evaluateJavascript("var style = document.getElementById('reader-style') || document.createElement('style'); style.id = 'reader-style'; style.innerHTML = '$finalCss'; if (!style.parentNode) document.head.appendChild(style);", null)
+        val themeAttr = if (isDarkMode) "dark" else "light"
+        webView.evaluateJavascript("""
+            (function() {
+                var style = document.getElementById('reader-style') || document.createElement('style');
+                style.id = 'reader-style';
+                style.innerHTML = '$finalCss';
+                if (!style.parentNode) document.head.appendChild(style);
+                document.documentElement.setAttribute('data-theme', '$themeAttr');
+            })();
+        """.trimIndent(), null)
     }
 
     fun updateUiState() {
@@ -619,6 +642,21 @@ class ReaderActivity : AppCompatActivity() {
         webView.settings.allowFileAccess = true
         webView.settings.cacheMode = WebSettings.LOAD_NO_CACHE
         webView.settings.domStorageEnabled = true
+
+        // Suppress the system selection menu
+        val noMenuCallback = object : android.view.ActionMode.Callback {
+            override fun onCreateActionMode(mode: android.view.ActionMode?, menu: android.view.Menu?): Boolean = false
+            override fun onPrepareActionMode(mode: android.view.ActionMode?, menu: android.view.Menu?): Boolean = false
+            override fun onActionItemClicked(mode: android.view.ActionMode?, item: android.view.MenuItem?): Boolean = false
+            override fun onDestroyActionMode(mode: android.view.ActionMode?) {}
+        }
+        
+        try {
+            val setMethod = View::class.java.getMethod("setCustomSelectionActionModeCallback", android.view.ActionMode.Callback::class.java)
+            setMethod.invoke(webView, noMenuCallback)
+        } catch (e: Exception) {
+            Log.e("Reader", "Could not suppress system menu", e)
+        }
         
         webView.addJavascriptInterface(object {
             @Keep
@@ -667,6 +705,7 @@ class ReaderActivity : AppCompatActivity() {
                         currentSpineIndex = index
                         updateChapterTitle()
                         saveReadingPosition()
+                        webView.evaluateJavascript("applyHighlights('${getHighlightsJson(index)}')", null)
                     }
                 }
             }
@@ -696,6 +735,30 @@ class ReaderActivity : AppCompatActivity() {
                     startActivity(intent)
                 }
             }
+
+            @Keep
+            @JavascriptInterface
+            @Suppress("unused")
+            fun saveHighlight(json: String) {
+                runOnUiThread {
+                    try {
+                        val obj = JSONObject(json)
+                        val highlight = Highlight(
+                            bookUri = epubBook?.uri.toString(),
+                            spineIndex = obj.getInt("spineIndex"),
+                            elementIdx = obj.getInt("elementIdx"),
+                            startOffset = obj.getInt("startOffset"),
+                            endOffset = obj.getInt("endOffset"),
+                            originalText = obj.getString("text")
+                        )
+                        highlightDb.saveHighlight(highlight)
+                        // Refresh current chapter to show new highlight
+                        webView.evaluateJavascript("applyHighlights('${getHighlightsJson(highlight.spineIndex)}')", null)
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
+                }
+            }
         }, "AndroidReader",)
 
         webView.webViewClient = object : WebViewClient() {
@@ -717,6 +780,8 @@ class ReaderActivity : AppCompatActivity() {
                     loadInitialPagedChapters()
                 }
                 
+                webView.evaluateJavascript("applyHighlights('${getHighlightsJson(currentSpineIndex)}')", null)
+
                 if (shouldJumpToLastPage && !isPagedMode) {
                     executeJumpToLastPage()
                 }
@@ -744,13 +809,234 @@ class ReaderActivity : AppCompatActivity() {
         }
     }
 
+    private fun getHighlightsJson(spineIndex: Int): String {
+        val list = highlightDb.getHighlights(epubBook?.uri.toString(), spineIndex)
+        val array = JSONArray()
+        list.forEach { h ->
+            val obj = JSONObject()
+            obj.put("spineIndex", h.spineIndex)
+            obj.put("elementIdx", h.elementIdx)
+            obj.put("startOffset", h.startOffset)
+            obj.put("endOffset", h.endOffset)
+            obj.put("color", h.color)
+            array.put(obj)
+        }
+        return array.toString().replace("'", "\\'")
+    }
+
     private fun injectIndexingScript() {
         val js = """
             (function() {
+                console.log('UniReader: Injecting script');
+                
+                // Add CSS for the floating highlight button if not already there
+                if (!document.getElementById('uni-highlight-style')) {
+                    var style = document.createElement('style');
+                    style.id = 'uni-highlight-style';
+                    style.innerHTML = `
+                        #uni-highlight-btn {
+                            position: fixed;
+                            background: #2196F3 !important;
+                            color: white !important;
+                            border: none !important;
+                            border-radius: 20px !important;
+                            padding: 10px 20px !important;
+                            font-size: 14px !important;
+                            font-weight: bold !important;
+                            z-index: 2147483647 !important;
+                            display: none;
+                            box-shadow: 0 4px 12px rgba(0,0,0,0.4) !important;
+                            cursor: pointer !important;
+                            font-family: sans-serif !important;
+                            transition: opacity 0.2s;
+                        }
+                        #uni-highlight-btn:active {
+                            background: #1976D2 !important;
+                            transform: scale(0.95) !important;
+                        }
+                    `;
+                    document.head.appendChild(style);
+                }
+                
+                var btn = document.getElementById('uni-highlight-btn');
+                if (!btn) {
+                    btn = document.createElement('button');
+                    btn.id = 'uni-highlight-btn';
+                    btn.innerText = 'Сохранить выделение';
+                    document.body.appendChild(btn);
+                    
+                    btn.onmousedown = function(e) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                    };
+                    btn.onclick = function(e) {
+                        console.log('UniReader: Button clicked');
+                        window.getSelectionDetails();
+                    };
+                }
+                
                 var items = document.querySelectorAll('p, h1, h2, h3, h4, h5, h6, li, img');
                 for (var i=0; i<items.length; i++) {
                     items[i].setAttribute('data-idx', i);
                 }
+                
+                window.getSelectionDetails = function() {
+                    var sel = window.getSelection();
+                    if (sel.rangeCount === 0) return;
+                    var range = sel.getRangeAt(0);
+                    var container = range.commonAncestorContainer;
+                    if (container.nodeType === 3) container = container.parentNode;
+                    var el = container.closest('[data-idx]');
+                    if (!el) return;
+                    
+                    var idx = parseInt(el.getAttribute('data-idx'));
+                    var preRange = document.createRange();
+                    preRange.selectNodeContents(el);
+                    preRange.setEnd(range.startContainer, range.startOffset);
+                    var start = preRange.toString().length;
+                    var end = start + range.toString().length;
+                    
+                    var data = {
+                        spineIndex: parseInt(el.closest('section').getAttribute('data-index')),
+                        elementIdx: idx,
+                        startOffset: start,
+                        endOffset: end,
+                        text: range.toString()
+                    };
+                    console.log('UniReader: Saving highlight', data);
+                    AndroidReader.saveHighlight(JSON.stringify(data));
+                    sel.removeAllRanges();
+                    btn.style.display = 'none';
+                };
+                
+                if (window.uniSelectionListener) {
+                    document.removeEventListener('selectionchange', window.uniSelectionListener);
+                }
+                
+                window.uniSelectionListener = function() {
+                    var sel = window.getSelection();
+                    var btn = document.getElementById('uni-highlight-btn');
+                    if (!btn) return;
+
+                    if (sel.isCollapsed || sel.rangeCount === 0) {
+                        btn.style.display = 'none';
+                        return;
+                    }
+                    
+                    var range = sel.getRangeAt(0);
+                    var rect = range.getBoundingClientRect();
+                    
+                    if (rect.width > 0 && rect.height > 0) {
+                        btn.style.display = 'block';
+                        var btnWidth = btn.offsetWidth || 150;
+                        var btnHeight = btn.offsetHeight || 40;
+                        
+                        // Center horizontally
+                        var left = rect.left + (rect.width / 2) - (btnWidth / 2);
+                        left = Math.max(10, Math.min(window.innerWidth - btnWidth - 10, left));
+                        
+                        // Position above the selection (top) with some space
+                        var top = rect.top - btnHeight - 20; 
+                        
+                        // If too close to the top edge, move it below the selection
+                        if (top < 10) {
+                            top = rect.bottom + 20;
+                        }
+                        
+                        btn.style.left = left + 'px';
+                        btn.style.top = top + 'px';
+                    } else {
+                        btn.style.display = 'none';
+                    }
+                };
+                
+                document.addEventListener('selectionchange', window.uniSelectionListener);
+                
+                // Disable native context menu to be doubly sure
+                document.oncontextmenu = function(e) {
+                    if (window.getSelection().toString().length > 0) {
+                        e.preventDefault();
+                    }
+                };
+
+                window.applyHighlights = function(json) {
+                    console.log('UniReader: Applying highlights', json);
+                    var highlights;
+                    try {
+                        highlights = JSON.parse(json);
+                    } catch(e) {
+                        console.error('UniReader: JSON parse error', e);
+                        return;
+                    }
+                    
+                    highlights.forEach(h => {
+                        var section = document.querySelector('section[data-index="' + h.spineIndex + '"]');
+                        if (!section) {
+                            console.warn('UniReader: Section not found', h.spineIndex);
+                            return;
+                        }
+                        var el = section.querySelector('[data-idx="' + h.elementIdx + '"]');
+                        if (!el) {
+                            console.warn('UniReader: Element not found', h.elementIdx);
+                            return;
+                        }
+                        
+                        el.querySelectorAll('mark.uni-highlight').forEach(m => {
+                            var p = m.parentNode;
+                            while(m.firstChild) p.insertBefore(m.firstChild, m);
+                            p.removeChild(m);
+                        });
+                        el.normalize();
+                    });
+
+                    highlights.forEach(h => {
+                        var section = document.querySelector('section[data-index="' + h.spineIndex + '"]');
+                        if (!section) return;
+                        var el = section.querySelector('[data-idx="' + h.elementIdx + '"]');
+                        if (!el) return;
+                        
+                        var walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, null, false);
+                        var current = 0;
+                        var startNode, startOffset, endNode, endOffset;
+                        
+                        while(walker.nextNode()) {
+                            var node = walker.currentNode;
+                            var len = node.textContent.length;
+                            if (!startNode && current + len >= h.startOffset) {
+                                startNode = node;
+                                startOffset = h.startOffset - current;
+                            }
+                            if (startNode && !endNode && current + len >= h.endOffset) {
+                                endNode = node;
+                                endOffset = h.endOffset - current;
+                                break;
+                            }
+                            current += len;
+                        }
+                        
+                        if (startNode && endNode) {
+                            console.log('UniReader: Wrapping text', h.elementIdx, h.startOffset, h.endOffset);
+                            var range = document.createRange();
+                            range.setStart(startNode, startOffset);
+                            range.setEnd(endNode, endOffset);
+                            
+                            var mark = document.createElement('mark');
+                            mark.className = 'uni-highlight';
+                            mark.style.backgroundColor = h.color;
+                            
+                            try {
+                                range.surroundContents(mark);
+                            } catch (e) {
+                                console.warn('UniReader: Complex range fallback', e);
+                                var contents = range.extractContents();
+                                mark.appendChild(contents);
+                                range.insertNode(mark);
+                            }
+                        } else {
+                            console.warn('UniReader: Nodes not found for offsets', h.startOffset, h.endOffset);
+                        }
+                    });
+                };
                 
                 document.body.addEventListener('click', function(e) {
                     var img = e.target.closest('img');
@@ -861,7 +1147,17 @@ class ReaderActivity : AppCompatActivity() {
             <!DOCTYPE html>
             <html style="background-color: $bgColor;">
             <head>
-                <style id="reader-style"></style>
+                <style id="reader-style">
+                    mark.uni-highlight {
+                        background-color: #ffeb3b !important;
+                        color: #000 !important;
+                        border-radius: 2px;
+                    }
+                    [data-theme="dark"] mark.uni-highlight {
+                        background-color: #f57f17 !important;
+                        color: #fff !important;
+                    }
+                </style>
                 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
             </head>
             <body data-mode="paged" style="background-color: $bgColor !important; margin: 0; padding: 0;">
@@ -1180,7 +1476,17 @@ class ReaderActivity : AppCompatActivity() {
             <!DOCTYPE html>
             <html style="background-color: $bgColor;">
             <head>
-                <style id="reader-style"></style>
+                <style id="reader-style">
+                    mark.uni-highlight {
+                        background-color: #ffeb3b !important;
+                        color: #000 !important;
+                        border-radius: 2px;
+                    }
+                    [data-theme="dark"] mark.uni-highlight {
+                        background-color: #f57f17 !important;
+                        color: #fff !important;
+                    }
+                </style>
                 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
             </head>
             <body style="background-color: $bgColor !important;">
@@ -1362,6 +1668,7 @@ class ReaderActivity : AppCompatActivity() {
         val stickToIndexArg = if (stickToCurrent) currentSpineIndex.toString() else "-1"
         webView.evaluateJavascript("appendChapter($index, `$escapedHtml`, $targetIdx, $targetOffset, $langArg, $jumpToLast, $anchorArg, $scrollToNewArg, $stickToIndexArg);") {
             isChapterLoading = false
+            webView.evaluateJavascript("applyHighlights('${getHighlightsJson(index)}')", null)
             onFinished?.invoke()
         }
     }
@@ -1387,6 +1694,7 @@ class ReaderActivity : AppCompatActivity() {
         val keepIndexArg = if (stayOnCurrent) currentSpineIndex.toString() else "-1"
         webView.evaluateJavascript("prependChapter($index, `$escapedHtml`, $langArg, $goToNewArg, $keepIndexArg);") {
             isChapterLoading = false
+            webView.evaluateJavascript("applyHighlights('${getHighlightsJson(index)}')", null)
             onFinished?.invoke()
         }
     }
