@@ -1,0 +1,8 @@
+- [ ] Добавить метод удаления в `HighlightDatabase.kt`
+- [ ] Обновить `getHighlightsJson` в `ReaderActivity.kt` (добавить ID)
+- [ ] Добавить `deleteHighlight` в `JavascriptInterface` в `ReaderActivity.kt`
+- [ ] Обновить `injectIndexingScript` в `ReaderActivity.kt`:
+    - [ ] Изменить текст кнопок ("Пометить", "Снять пометку")
+    - [ ] Реализовать логику переключения режима кнопки (сохранение/удаление)
+    - [ ] Добавить ID в атрибуты тега `mark` при отрисовке
+- [ ] Проверить работу (сборка не требуется, так как это JS и логика БД)

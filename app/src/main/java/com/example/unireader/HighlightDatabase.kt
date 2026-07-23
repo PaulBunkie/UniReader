@@ -60,6 +60,11 @@ class HighlightDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_N
         return db.insert(TABLE_HIGHLIGHTS, null, values)
     }
 
+    fun deleteHighlight(id: Long) {
+        val db = writableDatabase
+        db.delete(TABLE_HIGHLIGHTS, "$COLUMN_ID = ?", arrayOf(id.toString()))
+    }
+
     fun getHighlights(bookUri: String, spineIndex: Int): List<Highlight> {
         val highlights = mutableListOf<Highlight>()
         val db = readableDatabase

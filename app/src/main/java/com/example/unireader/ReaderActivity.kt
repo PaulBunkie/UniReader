@@ -760,6 +760,24 @@ class ReaderActivity : AppCompatActivity() {
                     }
                 }
             }
+
+            @Keep
+            @JavascriptInterface
+            @Suppress("unused")
+            fun deleteHighlight(id: String) {
+                runOnUiThread {
+                    try {
+                        highlightDb.deleteHighlight(id.toLong())
+                        // We need to know which spine index to refresh. 
+                        // For simplicity, refresh current if we can, or just tell JS to remove it.
+                        // But applyHighlights refreshes based on DB, so we just need to call it.
+                        // We can get the current spine index from the activity state.
+                        webView.evaluateJavascript("applyHighlights('${getHighlightsJson(currentSpineIndex)}')", null)
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
+                }
+            }
         }, "AndroidReader",)
 
         webView.webViewClient = object : WebViewClient() {
@@ -815,6 +833,7 @@ class ReaderActivity : AppCompatActivity() {
         val array = JSONArray()
         list.forEach { h ->
             val obj = JSONObject()
+            obj.put("id", h.id)
             obj.put("spineIndex", h.spineIndex)
             obj.put("elementIdx", h.elementIdx)
             obj.put("startOffset", h.startOffset)
@@ -863,7 +882,7 @@ class ReaderActivity : AppCompatActivity() {
                 if (!btn) {
                     btn = document.createElement('button');
                     btn.id = 'uni-highlight-btn';
-                    btn.innerText = 'Сохранить выделение';
+                    btn.innerText = 'Пометить';
                     document.body.appendChild(btn);
                     
                     btn.onmousedown = function(e) {
@@ -871,8 +890,14 @@ class ReaderActivity : AppCompatActivity() {
                         e.stopPropagation();
                     };
                     btn.onclick = function(e) {
-                        console.log('UniReader: Button clicked');
-                        window.getSelectionDetails();
+                        console.log('UniReader: Button clicked, mode:', this.getAttribute('data-mode'));
+                        if (this.getAttribute('data-mode') === 'delete') {
+                            var id = this.getAttribute('data-target-id');
+                            if (id) AndroidReader.deleteHighlight(id);
+                            window.getSelection().removeAllRanges();
+                        } else {
+                            window.getSelectionDetails();
+                        }
                     };
                 }
                 
@@ -897,8 +922,11 @@ class ReaderActivity : AppCompatActivity() {
                     var start = preRange.toString().length;
                     var end = start + range.toString().length;
                     
+                    var sectionEl = el.closest('section');
+                    if (!sectionEl) return;
+
                     var data = {
-                        spineIndex: parseInt(el.closest('section').getAttribute('data-index')),
+                        spineIndex: parseInt(sectionEl.getAttribute('data-index')),
                         elementIdx: idx,
                         startOffset: start,
                         endOffset: end,
@@ -925,6 +953,19 @@ class ReaderActivity : AppCompatActivity() {
                     }
                     
                     var range = sel.getRangeAt(0);
+                    var container = range.commonAncestorContainer;
+                    if (container.nodeType === 3) container = container.parentNode;
+                    
+                    var existingMark = container.closest('.uni-highlight');
+                    if (existingMark) {
+                        btn.innerText = 'Снять пометку';
+                        btn.setAttribute('data-mode', 'delete');
+                        btn.setAttribute('data-target-id', existingMark.getAttribute('data-id'));
+                    } else {
+                        btn.innerText = 'Пометить';
+                        btn.setAttribute('data-mode', 'save');
+                    }
+
                     var rect = range.getBoundingClientRect();
                     
                     if (rect.width > 0 && rect.height > 0) {
@@ -970,25 +1011,14 @@ class ReaderActivity : AppCompatActivity() {
                         return;
                     }
                     
-                    highlights.forEach(h => {
-                        var section = document.querySelector('section[data-index="' + h.spineIndex + '"]');
-                        if (!section) {
-                            console.warn('UniReader: Section not found', h.spineIndex);
-                            return;
-                        }
-                        var el = section.querySelector('[data-idx="' + h.elementIdx + '"]');
-                        if (!el) {
-                            console.warn('UniReader: Element not found', h.elementIdx);
-                            return;
-                        }
-                        
-                        el.querySelectorAll('mark.uni-highlight').forEach(m => {
-                            var p = m.parentNode;
-                            while(m.firstChild) p.insertBefore(m.firstChild, m);
-                            p.removeChild(m);
-                        });
-                        el.normalize();
+                    // Clear all existing highlights before reapplying
+                    // This is safer to avoid overlapping marks after deletion/update
+                    document.querySelectorAll('mark.uni-highlight').forEach(m => {
+                        var p = m.parentNode;
+                        while(m.firstChild) p.insertBefore(m.firstChild, m);
+                        p.removeChild(m);
                     });
+                    document.body.normalize();
 
                     highlights.forEach(h => {
                         var section = document.querySelector('section[data-index="' + h.spineIndex + '"]');
@@ -1024,6 +1054,7 @@ class ReaderActivity : AppCompatActivity() {
                             var mark = document.createElement('mark');
                             mark.className = 'uni-highlight';
                             mark.style.backgroundColor = h.color;
+                            mark.setAttribute('data-id', h.id);
                             
                             try {
                                 range.surroundContents(mark);
