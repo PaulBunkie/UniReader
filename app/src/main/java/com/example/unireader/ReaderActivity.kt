@@ -201,7 +201,8 @@ class ReaderActivity : AppCompatActivity() {
             android.R.id.home -> { finish(); true }
             R.id.action_toc -> {
                 epubBook?.let { book ->
-                    TOCSheet(book.toc) { href ->
+                    val currentHref = if (currentSpineIndex < book.spine.size) book.spine[currentSpineIndex].href else null
+                    TOCSheet(book.toc, currentHref) { href ->
                         handleInternalLink("epub://$href")
                     }.show(supportFragmentManager, "toc")
                 }

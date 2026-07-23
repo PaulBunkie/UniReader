@@ -1,0 +1,7 @@
+- [x] Update `TOCSheet.kt` to support highlighting
+    - [x] Update constructor and `TocAdapter` parameters
+    - [x] Implement `selectedIndex` logic in `TocAdapter`
+    - [x] Update `onBindViewHolder` to apply highlight style
+    - [x] Add auto-scroll logic to `onViewCreated`
+- [x] Update `ReaderActivity.kt` to pass current `href` to `TOCSheet`
+- [x] Verify the changes

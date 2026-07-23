@@ -1,6 +1,9 @@
 package com.example.unireader
 
+import android.graphics.Color
+import android.graphics.Typeface
 import android.os.Bundle
+import android.util.TypedValue
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -9,10 +12,13 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 
-class TOCSheet(private val toc: List<TocItem>, private val onItemClick: (String) -> Unit) : BottomSheetDialogFragment() {
+class TOCSheet(
+    private val toc: List<TocItem>,
+    private val currentHref: String?,
+    private val onItemClick: (String) -> Unit
+) : BottomSheetDialogFragment() {
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View? {
-        // Use the global theme, no manual setStyle needed
         return inflater.inflate(R.layout.dialog_toc, container, false)
     }
 
@@ -21,14 +27,34 @@ class TOCSheet(private val toc: List<TocItem>, private val onItemClick: (String)
         
         val rv = view.findViewById<RecyclerView>(R.id.rvToc)
         rv.layoutManager = LinearLayoutManager(context)
-        rv.adapter = TocAdapter(toc) { href ->
+        val adapter = TocAdapter(toc, currentHref) { href ->
             onItemClick(href)
             dismiss()
         }
+        rv.adapter = adapter
+        
+        if (adapter.selectedIndex != -1) {
+            rv.scrollToPosition(adapter.selectedIndex)
+        }
     }
 
-    class TocAdapter(private val items: List<TocItem>, private val onClick: (String) -> Unit) :
-        RecyclerView.Adapter<TocAdapter.ViewHolder>() {
+    class TocAdapter(
+        private val items: List<TocItem>,
+        private val currentHref: String?,
+        private val onClick: (String) -> Unit
+    ) : RecyclerView.Adapter<TocAdapter.ViewHolder>() {
+
+        var selectedIndex: Int = -1
+
+        init {
+            if (currentHref != null) {
+                selectedIndex = items.indexOfFirst { item ->
+                    item.href == currentHref || currentHref.endsWith(item.href) || item.href.endsWith(currentHref) ||
+                            item.href.substringBefore("#") == currentHref ||
+                            currentHref.endsWith(item.href.substringBefore("#"))
+                }
+            }
+        }
 
         class ViewHolder(view: View) : RecyclerView.ViewHolder(view) {
             val title: TextView = view.findViewById(R.id.tvTocTitle)
@@ -42,6 +68,17 @@ class TOCSheet(private val toc: List<TocItem>, private val onItemClick: (String)
         override fun onBindViewHolder(holder: ViewHolder, position: Int) {
             val item = items[position]
             holder.title.text = item.title
+            
+            if (position == selectedIndex) {
+                holder.title.setTypeface(null, Typeface.BOLD)
+                val typedValue = TypedValue()
+                holder.itemView.context.theme.resolveAttribute(com.google.android.material.R.attr.colorSurfaceVariant, typedValue, true)
+                holder.itemView.setBackgroundColor(typedValue.data)
+            } else {
+                holder.title.setTypeface(null, Typeface.NORMAL)
+                holder.itemView.setBackgroundColor(Color.TRANSPARENT)
+            }
+
             holder.itemView.setOnClickListener { onClick(item.href) }
         }
 
