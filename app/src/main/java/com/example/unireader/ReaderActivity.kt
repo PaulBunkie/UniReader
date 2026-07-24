@@ -170,9 +170,12 @@ class ReaderActivity : AppCompatActivity() {
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         intent.getStringExtra("epub_uri")?.let { outState.putString("epub_uri", it) }
-        outState.putInt("spine_index", currentSpineIndex)
-        outState.putInt("element_index", pendingElementIndex)
-        outState.putInt("char_offset", pendingCharOffset)
+        
+        val pos = lastKnownPosition
+        outState.putInt("spine_index", pos?.first ?: currentSpineIndex)
+        outState.putInt("element_index", pos?.second ?: pendingElementIndex)
+        outState.putInt("char_offset", pos?.third ?: pendingCharOffset)
+        
         outState.putString("anchor", pendingAnchor)
         outState.putBoolean("fullscreen", isFullscreenPref)
         outState.putBoolean("ui_visible", isUiOverlayVisible)
@@ -367,7 +370,10 @@ class ReaderActivity : AppCompatActivity() {
                 val idx = json.optInt("idx", -1)
                 val off = json.optInt("offset", -1)
                 val res = Triple(c, idx, off)
-                if (c >= 0) lastKnownPosition = res
+                if (c >= 0) {
+                    lastKnownPosition = res
+                    currentSpineIndex = c // Keep currentSpineIndex in sync
+                }
                 onCaptured(res)
             } catch (_: Exception) {
                 onCaptured(Triple(-1, -1, -1))
@@ -1739,9 +1745,16 @@ class ReaderActivity : AppCompatActivity() {
         webView.loadDataWithBaseURL("epub://seamless/", html, "application/xhtml+xml", "UTF-8", null)
         
         webView.postDelayed({
-            loadAndPrependChapter(finalPos.first - 1)
-            loadAndAppendChapter(finalPos.first, idxToUse, offsetToUse)
-            loadAndAppendChapter(finalPos.first + 1)
+            isJumpingToChapter = true
+            // Load target chapter FIRST
+            loadAndAppendChapter(finalPos.first, idxToUse, offsetToUse) {
+                // Once target is loaded, load neighbors
+                loadAndPrependChapter(finalPos.first - 1, stayOnCurrent = true) {
+                    loadAndAppendChapter(finalPos.first + 1, stickToCurrent = true) {
+                        isJumpingToChapter = false
+                    }
+                }
+            }
         }, 500)
     }
 
