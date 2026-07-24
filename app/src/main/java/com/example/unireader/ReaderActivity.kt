@@ -64,6 +64,10 @@ class ReaderActivity : AppCompatActivity() {
     private var isJumpingToChapter = false
     private var chaptersToLoad = 0
     private var isSwipeBlocked = false
+    
+    private var lastKnownPosition: Triple<Int, Int, Int>? = null
+    private val savePositionRunnable = Runnable { saveReadingPosition() }
+    private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
 
     lateinit var settings: ReaderSettings
     private lateinit var gestureDetector: GestureDetector
@@ -246,9 +250,11 @@ class ReaderActivity : AppCompatActivity() {
             settings.isPagedMode = paged
             settings.save(this)
             
-            if (pos.first >= 0) currentSpineIndex = pos.first
-            pendingElementIndex = pos.second
-            pendingCharOffset = pos.third
+            val finalPos = if (pos.first >= 0) pos else (lastKnownPosition ?: pos)
+            
+            if (finalPos.first >= 0) currentSpineIndex = finalPos.first
+            pendingElementIndex = finalPos.second
+            pendingCharOffset = finalPos.third
             
             if (!isPagedMode) {
                 initSeamlessScroll()
@@ -261,6 +267,7 @@ class ReaderActivity : AppCompatActivity() {
 
     override fun onPause() {
         super.onPause()
+        mainHandler.removeCallbacks(savePositionRunnable)
         saveReadingPosition()
     }
 
@@ -281,8 +288,11 @@ class ReaderActivity : AppCompatActivity() {
         val uri = intent.getStringExtra("epub_uri") ?: return
         captureCurrentPosition { pos ->
             val libraryProvider = LibraryProvider(this)
-            val finalSpineIdx = if (pos.first >= 0) pos.first else currentSpineIndex
-            libraryProvider.updateBookProgress(uri, finalSpineIdx, pos.second, pos.third, null)
+            val finalPos = if (pos.first >= 0) pos else (lastKnownPosition ?: pos)
+            
+            if (finalPos.first >= 0) {
+                libraryProvider.updateBookProgress(uri, finalPos.first, finalPos.second, finalPos.third, null)
+            }
         }
     }
 
@@ -356,7 +366,9 @@ class ReaderActivity : AppCompatActivity() {
                 val c = json.optInt("c", -1)
                 val idx = json.optInt("idx", -1)
                 val off = json.optInt("offset", -1)
-                onCaptured(Triple(c, idx, off))
+                val res = Triple(c, idx, off)
+                if (c >= 0) lastKnownPosition = res
+                onCaptured(res)
             } catch (_: Exception) {
                 onCaptured(Triple(-1, -1, -1))
             }
@@ -485,10 +497,10 @@ class ReaderActivity : AppCompatActivity() {
         val themeAttr = if (isDarkMode) "dark" else "light"
         webView.evaluateJavascript("""
             (function() {
-                var style = document.getElementById('reader-style') || document.createElement('style');
+                var style = document.getElementById('reader-style') || document.createElementNS('http://www.w3.org/1999/xhtml', 'style');
                 style.id = 'reader-style';
-                style.innerHTML = '$finalCss';
-                if (!style.parentNode) document.head.appendChild(style);
+                style.textContent = '$finalCss';
+                if (!style.parentNode) document.getElementsByTagName('head')[0].appendChild(style);
                 document.documentElement.setAttribute('data-theme', '$themeAttr');
             })();
         """.trimIndent(), null)
@@ -563,8 +575,8 @@ class ReaderActivity : AppCompatActivity() {
                 }
 
                 when {
-                    (x < width * 0.3) -> if (isPagedMode) prevPage()
-                    (x > width * 0.7) -> if (isPagedMode) nextPage()
+                    (x < width * 0.1) -> if (isPagedMode) prevPage()
+                    (x > width * 0.9) -> if (isPagedMode) nextPage()
                     else -> {
                         if (isFullscreenPref) {
                             if (isPagedMode) {
@@ -719,8 +731,12 @@ class ReaderActivity : AppCompatActivity() {
                     val sectionProgress = section.toFloat() / spineSize
                     val pageProgress = if (totalPages > 0) (page.toFloat() / totalPages) / spineSize else 0f
                     val percent = ((sectionProgress + pageProgress) * 100).toInt().coerceIn(0, 100)
-                    val text = "Секция ${section + 1}/$spineSize · Стр ${page + 1}/$totalPages · $percent%"
+                    val text = "Глава ${section + 1}/$spineSize · Стр ${page + 1}/$totalPages · $percent%"
                     findViewById<TextView>(R.id.tvProgressPlaceholder)?.text = text
+                    
+                    // Debounced save
+                    mainHandler.removeCallbacks(savePositionRunnable)
+                    mainHandler.postDelayed(savePositionRunnable, 2000)
                 }
             }
 
@@ -830,6 +846,8 @@ class ReaderActivity : AppCompatActivity() {
 
     private fun getHighlightsJson(spineIndex: Int): String {
         val list = highlightDb.getHighlights(epubBook?.uri.toString(), spineIndex)
+        val result = JSONObject()
+        result.put("spineIndex", spineIndex)
         val array = JSONArray()
         list.forEach { h ->
             val obj = JSONObject()
@@ -841,7 +859,8 @@ class ReaderActivity : AppCompatActivity() {
             obj.put("color", h.color)
             array.put(obj)
         }
-        return array.toString().replace("'", "\\'")
+        result.put("highlights", array)
+        return result.toString().replace("'", "\\'")
     }
 
     private fun injectIndexingScript() {
@@ -1003,26 +1022,29 @@ class ReaderActivity : AppCompatActivity() {
 
                 window.applyHighlights = function(json) {
                     console.log('UniReader: Applying highlights', json);
-                    var highlights;
+                    var data;
                     try {
-                        highlights = JSON.parse(json);
+                        data = JSON.parse(json);
                     } catch(e) {
                         console.error('UniReader: JSON parse error', e);
                         return;
                     }
                     
-                    // Clear all existing highlights before reapplying
-                    // This is safer to avoid overlapping marks after deletion/update
-                    document.querySelectorAll('mark.uni-highlight').forEach(m => {
+                    var spineIndex = data.spineIndex;
+                    var highlights = data.highlights;
+                    
+                    var section = document.querySelector('section[data-index="' + spineIndex + '"]');
+                    if (!section) return;
+
+                    // Clear existing highlights ONLY within this section
+                    section.querySelectorAll('.uni-highlight').forEach(m => {
                         var p = m.parentNode;
                         while(m.firstChild) p.insertBefore(m.firstChild, m);
                         p.removeChild(m);
                     });
-                    document.body.normalize();
+                    section.normalize();
 
                     highlights.forEach(h => {
-                        var section = document.querySelector('section[data-index="' + h.spineIndex + '"]');
-                        if (!section) return;
                         var el = section.querySelector('[data-idx="' + h.elementIdx + '"]');
                         if (!el) return;
                         
@@ -1046,13 +1068,12 @@ class ReaderActivity : AppCompatActivity() {
                         }
                         
                         if (startNode && endNode) {
-                            console.log('UniReader: Wrapping text', h.elementIdx, h.startOffset, h.endOffset);
                             var range = document.createRange();
                             range.setStart(startNode, startOffset);
                             range.setEnd(endNode, endOffset);
                             
-                            var mark = document.createElement('mark');
-                            mark.className = 'uni-highlight';
+                            var mark = document.createElementNS('http://www.w3.org/1999/xhtml', 'mark');
+                            mark.setAttribute('class', 'uni-highlight');
                             mark.style.backgroundColor = h.color;
                             mark.setAttribute('data-id', h.id);
                             
@@ -1064,8 +1085,6 @@ class ReaderActivity : AppCompatActivity() {
                                 mark.appendChild(contents);
                                 range.insertNode(mark);
                             }
-                        } else {
-                            console.warn('UniReader: Nodes not found for offsets', h.startOffset, h.endOffset);
                         }
                     });
                 };
@@ -1094,10 +1113,15 @@ class ReaderActivity : AppCompatActivity() {
     }
 
     private fun handleInternalLink(url: String) {
+        Log.d("Reader", "handleInternalLink: $url")
         shouldJumpToLastPage = false
         if (!url.startsWith("epub://") && !url.contains("#") && !url.endsWith(".xhtml") && !url.endsWith(".html")) return
 
-        val cleanPath = url.replace("epub://", "").substringBefore("?")
+        var cleanPath = url.replace("epub://", "").substringBefore("?")
+        // Remove virtual base paths if they exist
+        if (cleanPath.startsWith("paged/")) cleanPath = cleanPath.substring(6)
+        if (cleanPath.startsWith("seamless/")) cleanPath = cleanPath.substring(9)
+        
         val pathWithoutFragment = cleanPath.substringBefore("#").replace("\\", "/")
         val fragment = if (cleanPath.contains("#")) cleanPath.substringAfter("#") else null
 
@@ -1106,11 +1130,11 @@ class ReaderActivity : AppCompatActivity() {
         
         var targetIndex = -1
         
-        // 1. Direct match
+        // 1. Direct match (normalized paths from root)
         for (i in book.spine.indices) {
             val itemHref = book.spine[i].href
             val fullHref = if (opfDir.isEmpty()) itemHref else "$opfDir/$itemHref".replace("//", "/").replace("\\", "/")
-            if (fullHref.equals(pathWithoutFragment, ignoreCase = true)) {
+            if (fullHref.equals(pathWithoutFragment, ignoreCase = true) || itemHref.equals(pathWithoutFragment, ignoreCase = true)) {
                 targetIndex = i
                 break
             }
@@ -1137,19 +1161,30 @@ class ReaderActivity : AppCompatActivity() {
                 webView.evaluateJavascript("""
                     (function() {
                         var retry = 0;
-                        var lastWidth = 0;
                         function sync() {
-                            var target = document.getElementById('$fragment') || document.getElementsByName('$fragment')[0];
+                            var currentSection = document.getElementById('chapter-$currentSpineIndex');
+                            var target = currentSection ? (currentSection.querySelector('#$fragment') || document.getElementsByName('$fragment')[0]) : null;
+                            
+                            if (!target || (currentSection && !currentSection.contains(target))) {
+                                target = document.getElementById('$fragment') || document.getElementsByName('$fragment')[0];
+                            }
+                            
                             var pw = document.documentElement.getBoundingClientRect().width;
                             var sw = document.documentElement.scrollWidth;
-                            if ((target && sw > pw && sw === lastWidth) || retry > 60) {
+                            if ((target && sw > pw) || retry > 60) {
                                 if (target) {
                                     var rect = target.getBoundingClientRect();
                                     var pageIndex = Math.floor((window.pageXOffset + rect.left + 5) / pw);
+                                    
+                                    var targetSection = target.closest('section');
+                                    if (targetSection) {
+                                        var newIdx = parseInt(targetSection.getAttribute('data-index'));
+                                        AndroidReader.onChapterEntered(newIdx);
+                                    }
+                                    
                                     window.scrollTo(pageIndex * pw, 0);
                                 }
                             } else {
-                                lastWidth = sw;
                                 retry++;
                                 setTimeout(sync, 50);
                             }
@@ -1160,9 +1195,20 @@ class ReaderActivity : AppCompatActivity() {
             } else {
                 webView.evaluateJavascript("""
                     (function() {
-                        var target = document.getElementById('$fragment') || document.getElementsByName('$fragment')[0];
+                        var currentSection = document.getElementById('chapter-$currentSpineIndex');
+                        var target = currentSection ? (currentSection.querySelector('#$fragment') || document.getElementsByName('$fragment')[0]) : null;
+                        
+                        if (!target || (currentSection && !currentSection.contains(target))) {
+                            target = document.getElementById('$fragment') || document.getElementsByName('$fragment')[0];
+                        }
+
                         if (target) {
-                            window.scrollTo(0, window.pageYOffset + target.getBoundingClientRect().top);
+                            var targetSection = target.closest('section');
+                            if (targetSection) {
+                                var newIdx = parseInt(targetSection.getAttribute('data-index'));
+                                AndroidReader.onChapterEntered(newIdx);
+                            }
+                            window.scrollTo(0, window.pageYOffset + target.getBoundingClientRect().top - 60);
                         }
                     })();
                 """.trimIndent(), null)
@@ -1176,8 +1222,8 @@ class ReaderActivity : AppCompatActivity() {
         val bgColor = if (isDarkMode) "#000000" else "#FFFFFF"
 
         val html = """
-            <!DOCTYPE html>
-            <html style="background-color: $bgColor;">
+            <?xml version="1.0" encoding="utf-8"?>
+            <html xmlns="http://www.w3.org/1999/xhtml" style="background-color: $bgColor;">
             <head>
                 <style id="reader-style">
                     mark.uni-highlight {
@@ -1190,12 +1236,13 @@ class ReaderActivity : AppCompatActivity() {
                         color: #fff !important;
                     }
                 </style>
-                <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
             </head>
             <body data-mode="paged" style="background-color: $bgColor !important; margin: 0; padding: 0;">
                 <div id="snap-ribbon"></div>
                 <div id="chapters-container"></div>
-                <script>
+                <script type="text/javascript">
+                    //<![CDATA[
                     // CSS Scroll Snap markers: rebuild ribbon of snap points after content changes
                     function updateSnapMarkers() {
                         var ribbon = document.getElementById('snap-ribbon');
@@ -1219,22 +1266,44 @@ class ReaderActivity : AppCompatActivity() {
                     var isLoadingBottom = false;
                     var wasInContent = false;
 
+                    var lastReportedIdx = -1;
+                    var lastReportedPage = -1;
+
                     window.addEventListener('scroll', function() {
                         var sw = document.documentElement.scrollWidth;
                         var pw = document.documentElement.getBoundingClientRect().width;
                         var sl = window.pageXOffset;
 
                         var sections = [...document.querySelectorAll('section')];
-                        var active = sections.find(function(s) {
-                            var r = s.getBoundingClientRect();
-                            return r.left <= 20 && r.right > 20;
-                        });
+                        var active = null;
+                        var activeIdx = -1;
+                        
+                        for (var i = 0; i < sections.length; i++) {
+                            var r = sections[i].getBoundingClientRect();
+                            if (r.left <= 20 && r.right > 20) {
+                                active = sections[i];
+                                activeIdx = i;
+                                break;
+                            }
+                        }
+
                         if (active) {
-                            var page = pw > 0 ? Math.floor((sl + 5) / pw) : 0;
-                            var totalPages = pw > 0 ? Math.round(sw / pw) : 0;
-                            console.log('SCROLL: section=' + active.getAttribute('data-index') + ' page=' + page + ' sl=' + sl + ' sw=' + sw);
-                            AndroidReader.onChapterEntered(parseInt(active.getAttribute('data-index')));
-                            AndroidReader.onProgressUpdate(parseInt(active.getAttribute('data-index')), page, totalPages);
+                            var sectionStart = active.offsetLeft;
+                            var sectionWidth = (activeIdx < sections.length - 1) ? 
+                                               sections[activeIdx+1].offsetLeft - sectionStart : 
+                                               sw - sectionStart;
+                            
+                            var localSl = sl - sectionStart;
+                            var page = Math.max(0, Math.floor((localSl + 5) / pw));
+                            var totalPages = Math.max(1, Math.round(sectionWidth / pw));
+                            var idx = parseInt(active.getAttribute('data-index'));
+
+                            if (idx !== lastReportedIdx || page !== lastReportedPage) {
+                                lastReportedIdx = idx;
+                                lastReportedPage = page;
+                                AndroidReader.onChapterEntered(idx);
+                                AndroidReader.onProgressUpdate(idx, page, totalPages);
+                            }
                         }
 
                         clearTimeout(edgeCheckTimer);
@@ -1461,6 +1530,7 @@ class ReaderActivity : AppCompatActivity() {
                             }
                         }
                     }
+                    //]]>
                 </script>
             </body>
             </html>
@@ -1471,12 +1541,15 @@ class ReaderActivity : AppCompatActivity() {
         isChapterLoading = false
         isJumpingToChapter = true
 
-        webView.loadDataWithBaseURL("epub://paged/", html, "text/html", "UTF-8", null)
+        webView.loadDataWithBaseURL("epub://paged/", html, "application/xhtml+xml", "UTF-8", null)
     }
 
     private fun loadInitialPagedChapters() {
-        val idxToUse = pendingElementIndex
-        val offsetToUse = pendingCharOffset
+        val useCache = lastKnownPosition != null && lastKnownPosition?.first == currentSpineIndex
+        val finalPos = if (useCache) lastKnownPosition!! else Triple(currentSpineIndex, pendingElementIndex, pendingCharOffset)
+        
+        val idxToUse = finalPos.second
+        val offsetToUse = finalPos.third
         val anchorToUse = pendingAnchor
         val jumpToLast = shouldJumpToLastPage
 
@@ -1495,9 +1568,9 @@ class ReaderActivity : AppCompatActivity() {
             }
         }
 
-        loadAndAppendChapter(currentSpineIndex, idxToUse, offsetToUse, jumpToLast, anchorToUse) { onChapterDone() }
-        loadAndPrependChapter(currentSpineIndex - 1) { onChapterDone() }
-        loadAndAppendChapter(currentSpineIndex + 1) { onChapterDone() }
+        loadAndAppendChapter(finalPos.first, idxToUse, offsetToUse, jumpToLast, anchorToUse) { onChapterDone() }
+        loadAndPrependChapter(finalPos.first - 1) { onChapterDone() }
+        loadAndAppendChapter(finalPos.first + 1) { onChapterDone() }
     }
 
     private fun initSeamlessScroll() {
@@ -1505,8 +1578,8 @@ class ReaderActivity : AppCompatActivity() {
         val bgColor = if (isDarkMode) "#000000" else "#FFFFFF"
         
         val html = """
-            <!DOCTYPE html>
-            <html style="background-color: $bgColor;">
+            <?xml version="1.0" encoding="utf-8"?>
+            <html xmlns="http://www.w3.org/1999/xhtml" style="background-color: $bgColor;">
             <head>
                 <style id="reader-style">
                     mark.uni-highlight {
@@ -1519,11 +1592,12 @@ class ReaderActivity : AppCompatActivity() {
                         color: #fff !important;
                     }
                 </style>
-                <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
             </head>
             <body style="background-color: $bgColor !important;">
                 <div id="chapters-container"></div>
-                <script>
+                <script type="text/javascript">
+                    //<![CDATA[
                     var observer = new IntersectionObserver(function(entries) {
                         entries.forEach(function(entry) {
                             if (entry.isIntersecting) {
@@ -1643,6 +1717,7 @@ class ReaderActivity : AppCompatActivity() {
                         container.insertBefore(sentinel, container.firstChild);
                         observer.observe(sentinel);
                     }
+                    //]]>
                 </script>
             </body>
             </html>
@@ -1651,17 +1726,22 @@ class ReaderActivity : AppCompatActivity() {
         lastAppendedIndex = -1
         firstPrependedIndex = Int.MAX_VALUE
         isChapterLoading = false
-        val idxToUse = pendingElementIndex
-        val offsetToUse = pendingCharOffset
+        
+        val useCache = lastKnownPosition != null && lastKnownPosition?.first == currentSpineIndex
+        val finalPos = if (useCache) lastKnownPosition!! else Triple(currentSpineIndex, pendingElementIndex, pendingCharOffset)
+        
+        val idxToUse = finalPos.second
+        val offsetToUse = finalPos.third
+        
         pendingElementIndex = -1
         pendingCharOffset = -1
         
-        webView.loadDataWithBaseURL("epub://seamless/", html, "text/html", "UTF-8", null)
+        webView.loadDataWithBaseURL("epub://seamless/", html, "application/xhtml+xml", "UTF-8", null)
         
         webView.postDelayed({
-            loadAndPrependChapter(currentSpineIndex - 1)
-            loadAndAppendChapter(currentSpineIndex, idxToUse, offsetToUse)
-            loadAndAppendChapter(currentSpineIndex + 1)
+            loadAndPrependChapter(finalPos.first - 1)
+            loadAndAppendChapter(finalPos.first, idxToUse, offsetToUse)
+            loadAndAppendChapter(finalPos.first + 1)
         }, 500)
     }
 
@@ -1765,6 +1845,7 @@ class ReaderActivity : AppCompatActivity() {
     }
 
     private fun loadSpineItem(index: Int, jumpToLast: Boolean = false) {
+        lastKnownPosition = null // CLEAR CACHE on intentional jump
         currentSpineIndex = index
         shouldJumpToLastPage = jumpToLast
         updateChapterTitle()

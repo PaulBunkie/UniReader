@@ -13,6 +13,7 @@ class ChapterLoader(private val context: Context, private val book: EpubBook) {
         val item = book.spine[index]
         val opfDir = File(book.opfPath).parent ?: ""
         val fullPath = if (opfDir.isEmpty()) item.href else "$opfDir/${item.href}".replace("//", "/")
+        val chapterDir = File(fullPath).parent ?: ""
         
         return try {
             context.contentResolver.openInputStream(book.uri)?.use { inputStream ->
@@ -22,7 +23,7 @@ class ChapterLoader(private val context: Context, private val book: EpubBook) {
                     val entryName = entry.name.replace("\\", "/")
                     if (entryName == fullPath.replace("\\", "/")) {
                         val rawHtml = zip.readBytes().toString(Charsets.UTF_8)
-                        return sanitizeHtml(rawHtml, opfDir)
+                        return sanitizeHtml(rawHtml, chapterDir)
                     }
                     entry = zip.nextEntry
                 }
@@ -60,8 +61,13 @@ class ChapterLoader(private val context: Context, private val book: EpubBook) {
     }
     
     private fun resolveRelativePath(base: String, relative: String): String {
+        if (relative.startsWith("http://") || relative.startsWith("https://") || relative.startsWith("epub://")) return relative
+        
+        val pathWithoutFragment = relative.substringBefore("#")
+        val fragment = if (relative.contains("#")) "#" + relative.substringAfter("#") else ""
+        
         val parts = (if (base.isEmpty()) "" else "$base/").split("/").filter { it.isNotEmpty() }.toMutableList()
-        val relParts = relative.split("/")
+        val relParts = pathWithoutFragment.split("/")
         for (part in relParts) {
             if (part == "..") {
                 if (parts.isNotEmpty()) parts.removeAt(parts.size - 1)
@@ -69,6 +75,6 @@ class ChapterLoader(private val context: Context, private val book: EpubBook) {
                 parts.add(part)
             }
         }
-        return parts.joinToString("/")
+        return parts.joinToString("/") + fragment
     }
 }

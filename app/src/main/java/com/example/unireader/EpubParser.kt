@@ -114,7 +114,8 @@ class EpubParser(private val context: Context) {
         // Try Nav (EPUB 3) first
         if (navHref != null) {
             val fullNavPath = if (opfDir.isEmpty()) navHref else "$opfDir/$navHref".replace("//", "/")
-            parseNav(uri, fullNavPath)?.let { toc.addAll(it) }
+            val navDir = File(fullNavPath).parent ?: ""
+            parseNav(uri, fullNavPath, navDir)?.let { toc.addAll(it) }
         }
         
         // If Nav failed or empty, try NCX (EPUB 2)
@@ -122,7 +123,8 @@ class EpubParser(private val context: Context) {
             val ncxHref = manifest[tocId]?.first
             if (ncxHref != null) {
                 val ncxPath = if (opfDir.isEmpty()) ncxHref else "$opfDir/$ncxHref".replace("//", "/")
-                parseNcx(uri, ncxPath)?.let { toc.addAll(it) }
+                val ncxDir = File(ncxPath).parent ?: ""
+                parseNcx(uri, ncxPath, ncxDir)?.let { toc.addAll(it) }
             }
         }
 
@@ -135,7 +137,7 @@ class EpubParser(private val context: Context) {
         }
     }
 
-    private fun parseNav(uri: Uri, navPath: String): List<TocItem>? {
+    private fun parseNav(uri: Uri, navPath: String, navDir: String): List<TocItem>? {
         val toc = mutableListOf<TocItem>()
         try {
             context.contentResolver.openInputStream(uri)?.use { inputStream ->
@@ -170,7 +172,8 @@ class EpubParser(private val context: Context) {
                                     if (parser.name == "nav") inNav = false
                                     if (inNav && parser.name == "a") {
                                         if (currentHref != null && currentText.isNotEmpty()) {
-                                            toc.add(TocItem(currentText.toString().trim(), currentHref!!))
+                                            val normalizedHref = resolveRelativePath(navDir, currentHref!!)
+                                            toc.add(TocItem(currentText.toString().trim(), normalizedHref))
                                         }
                                         currentHref = null
                                     }
@@ -187,7 +190,7 @@ class EpubParser(private val context: Context) {
         return null
     }
 
-    private fun parseNcx(uri: Uri, ncxPath: String): List<TocItem>? {
+    private fun parseNcx(uri: Uri, ncxPath: String, ncxDir: String): List<TocItem>? {
         val toc = mutableListOf<TocItem>()
         try {
             context.contentResolver.openInputStream(uri)?.use { inputStream ->
@@ -220,7 +223,8 @@ class EpubParser(private val context: Context) {
                                 XmlPullParser.END_TAG -> {
                                     if (parser.name == "navPoint") {
                                         if (currentText != null && currentHref != null) {
-                                            toc.add(TocItem(currentText!!.trim(), currentHref!!))
+                                            val normalizedHref = resolveRelativePath(ncxDir, currentHref!!)
+                                            toc.add(TocItem(currentText!!.trim(), normalizedHref))
                                         }
                                         currentText = null
                                         currentHref = null
@@ -237,5 +241,22 @@ class EpubParser(private val context: Context) {
             }
         } catch (e: Exception) { e.printStackTrace() }
         return null
+    }
+
+    private fun resolveRelativePath(base: String, relative: String): String {
+        if (relative.contains("://")) return relative
+        val pathWithoutFragment = relative.substringBefore("#")
+        val fragment = if (relative.contains("#")) "#" + relative.substringAfter("#") else ""
+        
+        val parts = (if (base.isEmpty()) "" else "$base/").split("/").filter { it.isNotEmpty() }.toMutableList()
+        val relParts = pathWithoutFragment.split("/")
+        for (part in relParts) {
+            if (part == "..") {
+                if (parts.isNotEmpty()) parts.removeAt(parts.size - 1)
+            } else if (part != "." && part.isNotEmpty()) {
+                parts.add(part)
+            }
+        }
+        return parts.joinToString("/") + fragment
     }
 }

@@ -34,14 +34,19 @@ class LibraryProvider(private val context: Context) {
     }
 
     fun updateBookProgress(uri: String, spineIndex: Int, elementIndex: Int, charOffset: Int, anchor: String?) {
+        if (spineIndex < 0) return // Invalid spine index
+        
         val books = getBooks()
         val book = books.find { it.uri == uri }
         if (book != null) {
-            book.lastSpineIndex = spineIndex
-            book.lastElementIndex = elementIndex
-            book.lastCharOffset = charOffset
-            book.lastAnchor = anchor
-            saveBooks(books)
+            // Only update if we have a valid element index, or if we are at least updating the spine index
+            if (elementIndex >= 0 || spineIndex != book.lastSpineIndex) {
+                book.lastSpineIndex = spineIndex
+                book.lastElementIndex = elementIndex
+                book.lastCharOffset = charOffset
+                book.lastAnchor = anchor
+                saveBooks(books)
+            }
         }
     }
 
