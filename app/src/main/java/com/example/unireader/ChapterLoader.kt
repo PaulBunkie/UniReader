@@ -57,6 +57,12 @@ class ChapterLoader(private val context: Context, private val book: EpubBook) {
             "href=\"epub://$absolutePath\""
         }
 
+        // FIX: Handle self-closing tags like <strong/> or <span/> which break non-XHTML WebView
+        content = content.replace(Regex("<(strong|span|p|div|em|i|b)\\s*/>", RegexOption.IGNORE_CASE)) { matchResult ->
+            val tag = matchResult.groupValues[1]
+            "<$tag></$tag>"
+        }
+
         return ChapterContent(content, lang)
     }
     

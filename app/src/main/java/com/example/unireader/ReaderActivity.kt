@@ -503,7 +503,7 @@ class ReaderActivity : AppCompatActivity() {
         val themeAttr = if (isDarkMode) "dark" else "light"
         webView.evaluateJavascript("""
             (function() {
-                var style = document.getElementById('reader-style') || document.createElementNS('http://www.w3.org/1999/xhtml', 'style');
+                var style = document.getElementById('reader-style') || document.createElement('style');
                 style.id = 'reader-style';
                 style.textContent = '$finalCss';
                 if (!style.parentNode) document.getElementsByTagName('head')[0].appendChild(style);
@@ -1078,7 +1078,7 @@ class ReaderActivity : AppCompatActivity() {
                             range.setStart(startNode, startOffset);
                             range.setEnd(endNode, endOffset);
                             
-                            var mark = document.createElementNS('http://www.w3.org/1999/xhtml', 'mark');
+                            var mark = document.createElement('mark');
                             mark.setAttribute('class', 'uni-highlight');
                             mark.style.backgroundColor = h.color;
                             mark.setAttribute('data-id', h.id);
@@ -1228,8 +1228,8 @@ class ReaderActivity : AppCompatActivity() {
         val bgColor = if (isDarkMode) "#000000" else "#FFFFFF"
 
         val html = """
-            <?xml version="1.0" encoding="utf-8"?>
-            <html xmlns="http://www.w3.org/1999/xhtml" style="background-color: $bgColor;">
+            <!DOCTYPE html>
+            <html style="background-color: $bgColor;">
             <head>
                 <style id="reader-style">
                     mark.uni-highlight {
@@ -1242,13 +1242,12 @@ class ReaderActivity : AppCompatActivity() {
                         color: #fff !important;
                     }
                 </style>
-                <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+                <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
             </head>
             <body data-mode="paged" style="background-color: $bgColor !important; margin: 0; padding: 0;">
                 <div id="snap-ribbon"></div>
                 <div id="chapters-container"></div>
                 <script type="text/javascript">
-                    //<![CDATA[
                     // CSS Scroll Snap markers: rebuild ribbon of snap points after content changes
                     function updateSnapMarkers() {
                         var ribbon = document.getElementById('snap-ribbon');
@@ -1536,7 +1535,6 @@ class ReaderActivity : AppCompatActivity() {
                             }
                         }
                     }
-                    //]]>
                 </script>
             </body>
             </html>
@@ -1547,7 +1545,7 @@ class ReaderActivity : AppCompatActivity() {
         isChapterLoading = false
         isJumpingToChapter = true
 
-        webView.loadDataWithBaseURL("epub://paged/", html, "application/xhtml+xml", "UTF-8", null)
+        webView.loadDataWithBaseURL("epub://paged/", html, "text/html", "UTF-8", null)
     }
 
     private fun loadInitialPagedChapters() {
@@ -1584,8 +1582,8 @@ class ReaderActivity : AppCompatActivity() {
         val bgColor = if (isDarkMode) "#000000" else "#FFFFFF"
         
         val html = """
-            <?xml version="1.0" encoding="utf-8"?>
-            <html xmlns="http://www.w3.org/1999/xhtml" style="background-color: $bgColor;">
+            <!DOCTYPE html>
+            <html>
             <head>
                 <style id="reader-style">
                     mark.uni-highlight {
@@ -1598,12 +1596,11 @@ class ReaderActivity : AppCompatActivity() {
                         color: #fff !important;
                     }
                 </style>
-                <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+                <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
             </head>
             <body style="background-color: $bgColor !important;">
                 <div id="chapters-container"></div>
                 <script type="text/javascript">
-                    //<![CDATA[
                     var observer = new IntersectionObserver(function(entries) {
                         entries.forEach(function(entry) {
                             if (entry.isIntersecting) {
@@ -1723,7 +1720,6 @@ class ReaderActivity : AppCompatActivity() {
                         container.insertBefore(sentinel, container.firstChild);
                         observer.observe(sentinel);
                     }
-                    //]]>
                 </script>
             </body>
             </html>
@@ -1742,7 +1738,7 @@ class ReaderActivity : AppCompatActivity() {
         pendingElementIndex = -1
         pendingCharOffset = -1
         
-        webView.loadDataWithBaseURL("epub://seamless/", html, "application/xhtml+xml", "UTF-8", null)
+        webView.loadDataWithBaseURL("epub://seamless/", html, "text/html", "UTF-8", null)
         
         webView.postDelayed({
             isJumpingToChapter = true
