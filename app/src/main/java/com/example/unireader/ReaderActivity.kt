@@ -19,6 +19,7 @@ import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.widget.ProgressBar
 import android.widget.TextView
 import org.json.JSONObject
 import org.json.JSONArray
@@ -33,7 +34,10 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.core.view.updateLayoutParams
+import androidx.lifecycle.lifecycleScope
 import com.google.android.material.appbar.AppBarLayout
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import java.io.ByteArrayInputStream
 import java.io.File
 import java.util.zip.ZipInputStream
@@ -74,6 +78,11 @@ class ReaderActivity : AppCompatActivity() {
     private lateinit var highlightDb: HighlightDatabase
     private var isAdjustingBrightness = false
     
+    private lateinit var fixOverlay: View
+    private lateinit var fixLoading: ProgressBar
+    private lateinit var tvFixResult: TextView
+    private val fixService = FixService()
+
     private val hideBrightnessRunnable = Runnable { 
         findViewById<View>(R.id.tvBrightnessHint)?.visibility = View.GONE 
     }
@@ -97,6 +106,13 @@ class ReaderActivity : AppCompatActivity() {
         }
         
         setContentView(R.layout.activity_reader)
+
+        fixOverlay = findViewById(R.id.fixOverlay)
+        fixLoading = findViewById(R.id.fixLoading)
+        tvFixResult = findViewById(R.id.tvFixResult)
+        findViewById<View>(R.id.btnOverlayClose).setOnClickListener {
+            fixOverlay.visibility = View.GONE
+        }
 
         appBarLayout = findViewById(R.id.appBarLayout)
         bottomPanel = findViewById(R.id.bottomPanel)
@@ -800,6 +816,15 @@ class ReaderActivity : AppCompatActivity() {
                     }
                 }
             }
+
+            @Keep
+            @JavascriptInterface
+            @Suppress("unused")
+            fun fixText(json: String) {
+                runOnUiThread {
+                    showFixOverlay(json)
+                }
+            }
         }, "AndroidReader",)
 
         webView.webViewClient = object : WebViewClient() {
@@ -879,43 +904,65 @@ class ReaderActivity : AppCompatActivity() {
                     var style = document.createElement('style');
                     style.id = 'uni-highlight-style';
                     style.innerHTML = `
-                        #uni-highlight-btn {
+                        #uni-selection-menu {
                             position: fixed;
                             background: #2196F3 !important;
-                            color: white !important;
                             border: none !important;
                             border-radius: 20px !important;
+                            display: none;
+                            z-index: 2147483647 !important;
+                            box-shadow: 0 4px 12px rgba(0,0,0,0.4) !important;
+                            overflow: hidden;
+                            flex-direction: row;
+                            font-family: sans-serif !important;
+                        }
+                        .uni-menu-btn {
+                            background: none !important;
+                            border: none !important;
+                            color: white !important;
                             padding: 10px 20px !important;
                             font-size: 14px !important;
                             font-weight: bold !important;
-                            z-index: 2147483647 !important;
-                            display: none;
-                            box-shadow: 0 4px 12px rgba(0,0,0,0.4) !important;
                             cursor: pointer !important;
-                            font-family: sans-serif !important;
-                            transition: opacity 0.2s;
+                            transition: background 0.2s;
+                            white-space: nowrap;
                         }
-                        #uni-highlight-btn:active {
-                            background: #1976D2 !important;
-                            transform: scale(0.95) !important;
+                        .uni-menu-btn:active {
+                            background: rgba(0,0,0,0.1) !important;
+                        }
+                        .uni-menu-btn:not(:last-child) {
+                            border-right: 1px solid rgba(255,255,255,0.3) !important;
                         }
                     `;
                     document.head.appendChild(style);
                 }
                 
-                var btn = document.getElementById('uni-highlight-btn');
-                if (!btn) {
-                    btn = document.createElement('button');
-                    btn.id = 'uni-highlight-btn';
-                    btn.innerText = 'Пометить';
-                    document.body.appendChild(btn);
+                var menu = document.getElementById('uni-selection-menu');
+                if (!menu) {
+                    menu = document.createElement('div');
+                    menu.id = 'uni-selection-menu';
                     
-                    btn.onmousedown = function(e) {
+                    var btnHighlight = document.createElement('button');
+                    btnHighlight.id = 'uni-highlight-btn';
+                    btnHighlight.className = 'uni-menu-btn';
+                    btnHighlight.innerText = 'Пометить';
+                    menu.appendChild(btnHighlight);
+                    
+                    var btnFix = document.createElement('button');
+                    btnFix.id = 'uni-fix-btn';
+                    btnFix.className = 'uni-menu-btn';
+                    btnFix.innerText = 'Исправить';
+                    menu.appendChild(btnFix);
+                    
+                    document.body.appendChild(menu);
+                    
+                    menu.onmousedown = function(e) {
                         e.preventDefault();
                         e.stopPropagation();
                     };
-                    btn.onclick = function(e) {
-                        console.log('UniReader: Button clicked, mode:', this.getAttribute('data-mode'));
+                    
+                    btnHighlight.onclick = function(e) {
+                        console.log('UniReader: Highlight clicked');
                         if (this.getAttribute('data-mode') === 'delete') {
                             var id = this.getAttribute('data-target-id');
                             if (id) AndroidReader.deleteHighlight(id);
@@ -923,6 +970,40 @@ class ReaderActivity : AppCompatActivity() {
                         } else {
                             window.getSelectionDetails();
                         }
+                    };
+                    
+                    btnFix.onclick = function(e) {
+                        console.log('UniReader: Fix clicked');
+                        var sel = window.getSelection();
+                        var text = sel.toString();
+                        if (text) {
+                            var range = sel.getRangeAt(0);
+                            var container = range.commonAncestorContainer;
+                            if (container.nodeType === 3) container = container.parentNode;
+                            var p = container.closest('p, li, h1, h2, h3, h4, h5, h6') || container;
+                            
+                            var context = "";
+                            if (p.previousElementSibling) context += p.previousElementSibling.innerText + "\n\n";
+                            context += p.innerText;
+                            if (p.nextElementSibling) context += "\n\n" + p.nextElementSibling.innerText;
+                            
+                            var hotpoints = [];
+                            var fragment = range.cloneContents();
+                            var tempDiv = document.createElement('div');
+                            tempDiv.appendChild(fragment);
+                            tempDiv.querySelectorAll('.uni-highlight').forEach(h => {
+                                hotpoints.push(h.innerText);
+                            });
+
+                            var data = {
+                                text: text,
+                                context: context,
+                                hotpoints: hotpoints
+                            };
+                            AndroidReader.fixText(JSON.stringify(data));
+                            window.getSelection().removeAllRanges();
+                        }
+                        menu.style.display = 'none';
                     };
                 }
                 
@@ -960,7 +1041,8 @@ class ReaderActivity : AppCompatActivity() {
                     console.log('UniReader: Saving highlight', data);
                     AndroidReader.saveHighlight(JSON.stringify(data));
                     sel.removeAllRanges();
-                    btn.style.display = 'none';
+                    var menu = document.getElementById('uni-selection-menu');
+                    if (menu) menu.style.display = 'none';
                 };
                 
                 if (window.uniSelectionListener) {
@@ -969,11 +1051,11 @@ class ReaderActivity : AppCompatActivity() {
                 
                 window.uniSelectionListener = function() {
                     var sel = window.getSelection();
-                    var btn = document.getElementById('uni-highlight-btn');
-                    if (!btn) return;
+                    var menu = document.getElementById('uni-selection-menu');
+                    if (!menu) return;
 
                     if (sel.isCollapsed || sel.rangeCount === 0) {
-                        btn.style.display = 'none';
+                        menu.style.display = 'none';
                         return;
                     }
                     
@@ -981,39 +1063,44 @@ class ReaderActivity : AppCompatActivity() {
                     var container = range.commonAncestorContainer;
                     if (container.nodeType === 3) container = container.parentNode;
                     
+                    var btnHighlight = document.getElementById('uni-highlight-btn');
+                    var btnFix = document.getElementById('uni-fix-btn');
+                    
                     var existingMark = container.closest('.uni-highlight');
                     if (existingMark) {
-                        btn.innerText = 'Снять пометку';
-                        btn.setAttribute('data-mode', 'delete');
-                        btn.setAttribute('data-target-id', existingMark.getAttribute('data-id'));
+                        btnHighlight.innerText = 'Снять пометку';
+                        btnHighlight.setAttribute('data-mode', 'delete');
+                        btnHighlight.setAttribute('data-target-id', existingMark.getAttribute('data-id'));
+                        btnFix.style.display = 'none';
                     } else {
-                        btn.innerText = 'Пометить';
-                        btn.setAttribute('data-mode', 'save');
+                        btnHighlight.innerText = 'Пометить';
+                        btnHighlight.setAttribute('data-mode', 'save');
+                        btnFix.style.display = 'block';
                     }
 
                     var rect = range.getBoundingClientRect();
                     
                     if (rect.width > 0 && rect.height > 0) {
-                        btn.style.display = 'block';
-                        var btnWidth = btn.offsetWidth || 150;
-                        var btnHeight = btn.offsetHeight || 40;
+                        menu.style.display = 'flex';
+                        var menuWidth = menu.offsetWidth || 200;
+                        var menuHeight = menu.offsetHeight || 40;
                         
                         // Center horizontally
-                        var left = rect.left + (rect.width / 2) - (btnWidth / 2);
-                        left = Math.max(10, Math.min(window.innerWidth - btnWidth - 10, left));
+                        var left = rect.left + (rect.width / 2) - (menuWidth / 2);
+                        left = Math.max(10, Math.min(window.innerWidth - menuWidth - 10, left));
                         
                         // Position above the selection (top) with some space
-                        var top = rect.top - btnHeight - 20; 
+                        var top = rect.top - menuHeight - 20; 
                         
                         // If too close to the top edge, move it below the selection
                         if (top < 10) {
                             top = rect.bottom + 20;
                         }
                         
-                        btn.style.left = left + 'px';
-                        btn.style.top = top + 'px';
+                        menu.style.left = left + 'px';
+                        menu.style.top = top + 'px';
                     } else {
-                        btn.style.display = 'none';
+                        menu.style.display = 'none';
                     }
                 };
                 
@@ -1928,6 +2015,46 @@ class ReaderActivity : AppCompatActivity() {
             })();
         """.trimIndent()) {
             if (it == "\"prev\"") loadPrevSpineItem()
+        }
+    }
+
+    private fun showFixOverlay(json: String) {
+        val data = JSONObject(json)
+        val text = data.getString("text")
+        val context = data.optString("context")
+        val hotpointsJson = data.optJSONArray("hotpoints")
+        val hotpoints = mutableListOf<String>()
+        if (hotpointsJson != null) {
+            for (i in 0 until hotpointsJson.length()) {
+                hotpoints.add(hotpointsJson.getString(i))
+            }
+        }
+
+        fixOverlay.visibility = View.VISIBLE
+        fixLoading.visibility = View.VISIBLE
+        tvFixResult.text = "Создание задачи..."
+        
+        lifecycleScope.launch(Dispatchers.IO) {
+            fixService.improveText(
+                text = text,
+                context = context,
+                hotpoints = hotpoints,
+                onStatusUpdate = { status ->
+                    runOnUiThread { tvFixResult.text = status }
+                },
+                onSuccess = { result ->
+                    runOnUiThread {
+                        fixLoading.visibility = View.GONE
+                        tvFixResult.text = result
+                    }
+                },
+                onError = { error ->
+                    runOnUiThread {
+                        fixLoading.visibility = View.GONE
+                        tvFixResult.text = "Ошибка: $error"
+                    }
+                }
+            )
         }
     }
 }
