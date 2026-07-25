@@ -997,14 +997,21 @@ class ReaderActivity : AppCompatActivity() {
                         var text = sel.toString();
                         if (text) {
                             var range = sel.getRangeAt(0);
-                            var container = range.commonAncestorContainer;
-                            if (container.nodeType === 3) container = container.parentNode;
-                            var p = container.closest('p, li, h1, h2, h3, h4, h5, h6') || container;
                             
-                            var context = "";
-                            if (p.previousElementSibling) context += p.previousElementSibling.innerText + "\n\n";
-                            context += p.innerText;
-                            if (p.nextElementSibling) context += "\n\n" + p.nextElementSibling.innerText;
+                            // Get context: 1000 chars before and 1000 chars after
+                            var preRange = document.createRange();
+                            preRange.setStartBefore(document.body.firstChild);
+                            preRange.setEnd(range.startContainer, range.startOffset);
+                            var preText = preRange.toString();
+                            var contextLeft = preText.substring(Math.max(0, preText.length - 1000));
+                            
+                            var postRange = document.createRange();
+                            postRange.setStart(range.endContainer, range.endOffset);
+                            postRange.setEndAfter(document.body.lastChild);
+                            var postText = postRange.toString();
+                            var contextRight = postText.substring(0, 1000);
+                            
+                            var context = contextLeft + text + contextRight;
                             
                             var hotpoints = [];
                             var fragment = range.cloneContents();
