@@ -18,7 +18,7 @@ class FixService {
         context: String? = null,
         hotpoints: List<String>? = null,
         onStatusUpdate: (String) -> Unit,
-        onSuccess: (String) -> Unit,
+        onSuccess: (String, String?) -> Unit,
         onError: (String) -> Unit
     ) {
         try {
@@ -68,7 +68,7 @@ class FixService {
 
                 when (status) {
                     "completed" -> {
-                        onSuccess(statusData.getString("result"))
+                        onSuccess(statusData.getString("result"), statusData.optString("model"))
                         return
                     }
                     "error" -> {

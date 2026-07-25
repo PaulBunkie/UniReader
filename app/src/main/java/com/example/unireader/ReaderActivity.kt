@@ -82,6 +82,7 @@ class ReaderActivity : AppCompatActivity() {
     private lateinit var fixOverlay: View
     private lateinit var fixLoading: ProgressBar
     private lateinit var tvFixResult: TextView
+    private lateinit var tvFixModel: TextView
     private lateinit var fixActions: View
     private lateinit var btnFixRefresh: View
     private lateinit var btnFixAccept: View
@@ -115,6 +116,7 @@ class ReaderActivity : AppCompatActivity() {
         fixOverlay = findViewById(R.id.fixOverlay)
         fixLoading = findViewById(R.id.fixLoading)
         tvFixResult = findViewById(R.id.tvFixResult)
+        tvFixModel = findViewById(R.id.tvFixModel)
         fixActions = findViewById(R.id.fixActions)
         btnFixRefresh = findViewById(R.id.btnFixRefresh)
         btnFixAccept = findViewById(R.id.btnFixAccept)
@@ -2052,6 +2054,7 @@ class ReaderActivity : AppCompatActivity() {
         fixLoading.visibility = View.VISIBLE
         fixActions.visibility = View.GONE
         tvFixResult.text = "Создание задачи..."
+        tvFixModel.visibility = View.GONE
         
         lifecycleScope.launch(Dispatchers.IO) {
             fixService.improveText(
@@ -2061,11 +2064,15 @@ class ReaderActivity : AppCompatActivity() {
                 onStatusUpdate = { status ->
                     runOnUiThread { tvFixResult.text = status }
                 },
-                onSuccess = { result ->
+                onSuccess = { result, model ->
                     runOnUiThread {
                         fixLoading.visibility = View.GONE
                         fixActions.visibility = View.VISIBLE
                         tvFixResult.text = result
+                        if (!model.isNullOrEmpty()) {
+                            tvFixModel.text = model
+                            tvFixModel.visibility = View.VISIBLE
+                        }
                     }
                 },
                 onError = { error ->

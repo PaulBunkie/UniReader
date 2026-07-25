@@ -1,23 +1,32 @@
-# Walkthrough: Retry and Save Buttons for Text Improvement
+# Walkthrough: Text Improvement Enhancements
 
-I have added "Retry" (Обновить) and "Save" (Сохранить) buttons to the improvement overlay in `ReaderActivity`.
+I have updated the text improvement feature to include more context for better results and display additional information about the model used.
 
 ## Changes Made
 
-### UI Updates
-- **`activity_reader.xml`**: Added a button container (`fixActions`) with "Обновить" and "Сохранить" buttons at the bottom of the `fixOverlay`.
-- Buttons are styled using Material 3 `TextButton` and `TonalButton` for a clean, modern look.
-
-### Logic Updates
+### API Integration (Context & Hotpoints)
+- **`FixService.kt`**: Updated to support optional `context` and `hotpoints` fields in the `/api/improve` request.
 - **`ReaderActivity.kt`**:
-    - **State Management**: Added `lastFixRequestJson` to remember the last selection, context, and hotpoints.
-    - **Retry Logic**: Clicking "Обновить" re-triggers the API call using the saved request data.
-    - **Save Placeholder**: Clicking "Сохранить" shows a Toast message as a placeholder for the future saving implementation.
-    - **Visibility Handling**: The buttons are hidden while the API is loading and shown once a response (or error) is received.
+    - Updated JavaScript injection to automatically gather surrounding paragraph context.
+    - Added logic to detect existing highlights ("hotpoints") within the selection and send them to the API.
+
+### UI Enhancements
+- **`activity_reader.xml`**:
+    - Added "Retry" (Обновить) and "Save" (Сохранить) buttons to the overlay.
+    - Added a small, dimmed `TextView` (`tvFixModel`) to display the AI model's name.
+- **`ReaderActivity.kt`**:
+    - Implemented retry logic using `lastFixRequestJson`.
+    - Added a placeholder action for the "Save" button.
+    - Updated the UI to display the model name (e.g., `claude-3-haiku`) received from the API response.
+
+### Networking
+- Updated the base URL to the production server: `http://136.109.52.87:8080/api`.
 
 ## How to Test
-1. Select a paragraph in a book and click **"Исправить"**.
-2. Wait for the improvement result.
-3. Observe the **"Обновить"** and **"Сохранить"** buttons appearing at the bottom of the card.
-4. Click **"Обновить"** to see the task restart and fetch a new version.
-5. Click **"Сохранить"** to see the placeholder message.
+1. Select a paragraph that contains an existing highlight and click **"Исправить"**.
+2. Verify that the overlay shows "Processing...".
+3. Once completed, verify:
+    - The improved text is displayed.
+    - The name of the model that generated the response is shown at the bottom right of the text (small and dimmed).
+    - **"Обновить"** and **"Сохранить"** buttons are visible.
+4. Click **"Обновить"** to request a new version from the API.
