@@ -21,6 +21,7 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.ProgressBar
 import android.widget.TextView
+import android.widget.Toast
 import org.json.JSONObject
 import org.json.JSONArray
 import androidx.activity.OnBackPressedCallback
@@ -81,7 +82,11 @@ class ReaderActivity : AppCompatActivity() {
     private lateinit var fixOverlay: View
     private lateinit var fixLoading: ProgressBar
     private lateinit var tvFixResult: TextView
+    private lateinit var fixActions: View
+    private lateinit var btnFixRefresh: View
+    private lateinit var btnFixAccept: View
     private val fixService = FixService()
+    private var lastFixRequestJson: String? = null
 
     private val hideBrightnessRunnable = Runnable { 
         findViewById<View>(R.id.tvBrightnessHint)?.visibility = View.GONE 
@@ -110,8 +115,20 @@ class ReaderActivity : AppCompatActivity() {
         fixOverlay = findViewById(R.id.fixOverlay)
         fixLoading = findViewById(R.id.fixLoading)
         tvFixResult = findViewById(R.id.tvFixResult)
+        fixActions = findViewById(R.id.fixActions)
+        btnFixRefresh = findViewById(R.id.btnFixRefresh)
+        btnFixAccept = findViewById(R.id.btnFixAccept)
+
         findViewById<View>(R.id.btnOverlayClose).setOnClickListener {
             fixOverlay.visibility = View.GONE
+        }
+        
+        btnFixRefresh.setOnClickListener {
+            lastFixRequestJson?.let { showFixOverlay(it) }
+        }
+        
+        btnFixAccept.setOnClickListener {
+            Toast.makeText(this, "Сохранение будет реализовано позже", Toast.LENGTH_SHORT).show()
         }
 
         appBarLayout = findViewById(R.id.appBarLayout)
@@ -2019,6 +2036,7 @@ class ReaderActivity : AppCompatActivity() {
     }
 
     private fun showFixOverlay(json: String) {
+        lastFixRequestJson = json
         val data = JSONObject(json)
         val text = data.getString("text")
         val context = data.optString("context")
@@ -2032,6 +2050,7 @@ class ReaderActivity : AppCompatActivity() {
 
         fixOverlay.visibility = View.VISIBLE
         fixLoading.visibility = View.VISIBLE
+        fixActions.visibility = View.GONE
         tvFixResult.text = "Создание задачи..."
         
         lifecycleScope.launch(Dispatchers.IO) {
@@ -2045,12 +2064,14 @@ class ReaderActivity : AppCompatActivity() {
                 onSuccess = { result ->
                     runOnUiThread {
                         fixLoading.visibility = View.GONE
+                        fixActions.visibility = View.VISIBLE
                         tvFixResult.text = result
                     }
                 },
                 onError = { error ->
                     runOnUiThread {
                         fixLoading.visibility = View.GONE
+                        fixActions.visibility = View.VISIBLE
                         tvFixResult.text = "Ошибка: $error"
                     }
                 }
