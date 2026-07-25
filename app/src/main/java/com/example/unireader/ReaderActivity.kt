@@ -88,6 +88,7 @@ class ReaderActivity : AppCompatActivity() {
     private lateinit var btnFixAccept: View
     private val fixService = FixService()
     private var lastFixRequestJson: String? = null
+    private var lastImprovedText: String? = null
 
     private val hideBrightnessRunnable = Runnable { 
         findViewById<View>(R.id.tvBrightnessHint)?.visibility = View.GONE 
@@ -130,7 +131,7 @@ class ReaderActivity : AppCompatActivity() {
         }
         
         btnFixAccept.setOnClickListener {
-            Toast.makeText(this, "Сохранение будет реализовано позже", Toast.LENGTH_SHORT).show()
+            acceptImprovement()
         }
 
         appBarLayout = findViewById(R.id.appBarLayout)
@@ -470,9 +471,19 @@ class ReaderActivity : AppCompatActivity() {
                 color: #000 !important;
                 border-radius: 2px;
             }
+            mark.uni-fix {
+                background-color: #C8E6C9 !important;
+                color: #1B5E20 !important;
+                border-radius: 2px;
+                cursor: help;
+            }
             [data-theme="dark"] mark.uni-highlight {
                 background-color: #f57f17 !important;
                 color: #fff !important;
+            }
+            [data-theme="dark"] mark.uni-fix {
+                background-color: #2E7D32 !important;
+                color: #E8F5E9 !important;
             }
         """.trimIndent()
 
@@ -706,8 +717,10 @@ class ReaderActivity : AppCompatActivity() {
         }
         
         try {
-            val setMethod = View::class.java.getMethod("setCustomSelectionActionModeCallback", android.view.ActionMode.Callback::class.java)
-            setMethod.invoke(webView, noMenuCallback)
+            val setSelection = View::class.java.getMethod("setCustomSelectionActionModeCallback", android.view.ActionMode.Callback::class.java)
+            setSelection.invoke(webView, noMenuCallback)
+            val setInsertion = View::class.java.getMethod("setCustomInsertionActionModeCallback", android.view.ActionMode.Callback::class.java)
+            setInsertion.invoke(webView, noMenuCallback)
         } catch (e: Exception) {
             Log.e("Reader", "Could not suppress system menu", e)
         }
@@ -798,6 +811,7 @@ class ReaderActivity : AppCompatActivity() {
             @JavascriptInterface
             @Suppress("unused")
             fun saveHighlight(json: String) {
+                Log.d("Reader", "JS -> saveHighlight: $json")
                 runOnUiThread {
                     try {
                         val obj = JSONObject(json)
@@ -807,13 +821,16 @@ class ReaderActivity : AppCompatActivity() {
                             elementIdx = obj.getInt("elementIdx"),
                             startOffset = obj.getInt("startOffset"),
                             endOffset = obj.getInt("endOffset"),
-                            originalText = obj.getString("text")
+                            originalText = obj.getString("text"),
+                            replacementText = if (obj.has("replacementText") && !obj.isNull("replacementText")) obj.getString("replacementText") else null
                         )
-                        highlightDb.saveHighlight(highlight)
+                        Log.d("Reader", "Saving Highlight to DB: $highlight")
+                        val id = highlightDb.saveHighlight(highlight)
+                        Log.d("Reader", "Saved with ID: $id")
                         // Refresh current chapter to show new highlight
                         webView.evaluateJavascript("applyHighlights('${getHighlightsJson(highlight.spineIndex)}')", null)
                     } catch (e: Exception) {
-                        e.printStackTrace()
+                        Log.e("Reader", "Error saving highlight", e)
                     }
                 }
             }
@@ -907,10 +924,13 @@ class ReaderActivity : AppCompatActivity() {
             obj.put("startOffset", h.startOffset)
             obj.put("endOffset", h.endOffset)
             obj.put("color", h.color)
+            obj.put("replacementText", h.replacementText)
             array.put(obj)
         }
         result.put("highlights", array)
-        return result.toString().replace("'", "\\'")
+        val json = result.toString().replace("'", "\\'")
+        Log.d("Reader", "Sending highlights to JS: $json")
+        return json
     }
 
     private fun injectIndexingScript() {
@@ -951,6 +971,26 @@ class ReaderActivity : AppCompatActivity() {
                         }
                         .uni-menu-btn:not(:last-child) {
                             border-right: 1px solid rgba(255,255,255,0.3) !important;
+                        }
+                        #uni-fix-tooltip {
+                            position: fixed;
+                            background: #fdfdfd !important;
+                            color: #333 !important;
+                            border: 1px solid #ccc !important;
+                            border-radius: 8px !important;
+                            padding: 12px !important;
+                            font-size: 14px !important;
+                            z-index: 2147483647 !important;
+                            box-shadow: 0 4px 12px rgba(0,0,0,0.2) !important;
+                            max-width: 80% !important;
+                            line-height: 1.4 !important;
+                            display: none;
+                            font-family: sans-serif !important;
+                        }
+                        #uni-fix-tooltip b {
+                            color: #2E7D32;
+                            display: block;
+                            margin-bottom: 4px;
                         }
                     `;
                     document.head.appendChild(style);
@@ -998,39 +1038,73 @@ class ReaderActivity : AppCompatActivity() {
                         if (text) {
                             var range = sel.getRangeAt(0);
                             
-                            // Get context: 1000 chars before and 1000 chars after
-                            var preRange = document.createRange();
-                            preRange.setStartBefore(document.body.firstChild);
-                            preRange.setEnd(range.startContainer, range.startOffset);
-                            var preText = preRange.toString();
-                            var contextLeft = preText.substring(Math.max(0, preText.length - 1000));
-                            
-                            var postRange = document.createRange();
-                            postRange.setStart(range.endContainer, range.endOffset);
-                            postRange.setEndAfter(document.body.lastChild);
-                            var postText = postRange.toString();
-                            var contextRight = postText.substring(0, 1000);
-                            
-                            var context = contextLeft + text + contextRight;
-                            
-                            var hotpoints = [];
-                            var fragment = range.cloneContents();
-                            var tempDiv = document.createElement('div');
-                            tempDiv.appendChild(fragment);
-                            tempDiv.querySelectorAll('.uni-highlight').forEach(h => {
-                                hotpoints.push(h.innerText);
-                            });
+                            // 1. Capture positioning data IMMEDIATELY
+                            var container = range.commonAncestorContainer;
+                            if (container.nodeType === 3) container = container.parentNode;
+                            var el = container.closest('[data-idx]');
+                            if (el) {
+                                var idx = parseInt(el.getAttribute('data-idx'));
+                                var preRange = document.createRange();
+                                preRange.selectNodeContents(el);
+                                preRange.setEnd(range.startContainer, range.startOffset);
+                                var start = preRange.toString().length;
+                                var end = start + text.length;
+                                
+                                var sectionEl = el.closest('section');
+                                var spineIndex = sectionEl ? parseInt(sectionEl.getAttribute('data-index')) : -1;
 
-                            var data = {
-                                text: text,
-                                context: context,
-                                hotpoints: hotpoints
-                            };
-                            AndroidReader.fixText(JSON.stringify(data));
+                                // 2. Get context (1000 chars before/after)
+                                var fullPreRange = document.createRange();
+                                fullPreRange.setStartBefore(document.body.firstChild);
+                                fullPreRange.setEnd(range.startContainer, range.startOffset);
+                                var preText = fullPreRange.toString();
+                                var contextLeft = preText.substring(Math.max(0, preText.length - 1000));
+                                
+                                var fullPostRange = document.createRange();
+                                fullPostRange.setStart(range.endContainer, range.endOffset);
+                                fullPostRange.setEndAfter(document.body.lastChild);
+                                var postText = fullPostRange.toString();
+                                var contextRight = postText.substring(0, 1000);
+                                
+                                var context = contextLeft + text + contextRight;
+                                
+                                var hotpoints = [];
+                                var fragment = range.cloneContents();
+                                var tempDiv = document.createElement('div');
+                                tempDiv.appendChild(fragment);
+                                tempDiv.querySelectorAll('.uni-highlight').forEach(h => {
+                                    hotpoints.push(h.innerText);
+                                });
+
+                                var data = {
+                                    text: text,
+                                    context: context,
+                                    hotpoints: hotpoints,
+                                    spineIndex: spineIndex,
+                                    elementIdx: idx,
+                                    startOffset: start,
+                                    endOffset: end
+                                };
+                                console.log('UniReader: Sending fix data with positions', data);
+                                AndroidReader.fixText(JSON.stringify(data));
+                            }
                             window.getSelection().removeAllRanges();
                         }
                         menu.style.display = 'none';
                     };
+                }
+                
+                var tooltip = document.getElementById('uni-fix-tooltip');
+                if (!tooltip) {
+                    tooltip = document.createElement('div');
+                    tooltip.id = 'uni-fix-tooltip';
+                    document.body.appendChild(tooltip);
+                    
+                    document.addEventListener('mousedown', function(e) {
+                        if (tooltip.style.display === 'block' && !tooltip.contains(e.target)) {
+                            tooltip.style.display = 'none';
+                        }
+                    });
                 }
                 
                 var items = document.querySelectorAll('p, h1, h2, h3, h4, h5, h6, li, img');
@@ -1038,14 +1112,21 @@ class ReaderActivity : AppCompatActivity() {
                     items[i].setAttribute('data-idx', i);
                 }
                 
-                window.getSelectionDetails = function() {
+                window.getSelectionDetails = function(isReplacement, replacementText) {
+                    console.log('UniReader: getSelectionDetails called', {isReplacement, replacementText});
                     var sel = window.getSelection();
-                    if (sel.rangeCount === 0) return;
+                    if (sel.rangeCount === 0) {
+                        console.warn('UniReader: No selection range found');
+                        return;
+                    }
                     var range = sel.getRangeAt(0);
                     var container = range.commonAncestorContainer;
                     if (container.nodeType === 3) container = container.parentNode;
                     var el = container.closest('[data-idx]');
-                    if (!el) return;
+                    if (!el) {
+                        console.warn('UniReader: No element with data-idx found near selection');
+                        return;
+                    }
                     
                     var idx = parseInt(el.getAttribute('data-idx'));
                     var preRange = document.createRange();
@@ -1055,16 +1136,20 @@ class ReaderActivity : AppCompatActivity() {
                     var end = start + range.toString().length;
                     
                     var sectionEl = el.closest('section');
-                    if (!sectionEl) return;
+                    if (!sectionEl) {
+                        console.warn('UniReader: No section found for element');
+                        return;
+                    }
 
                     var data = {
                         spineIndex: parseInt(sectionEl.getAttribute('data-index')),
                         elementIdx: idx,
                         startOffset: start,
                         endOffset: end,
-                        text: range.toString()
+                        text: range.toString(),
+                        replacementText: isReplacement ? replacementText : null
                     };
-                    console.log('UniReader: Saving highlight', data);
+                    console.log('UniReader: Preparing to send data to Android', data);
                     AndroidReader.saveHighlight(JSON.stringify(data));
                     sel.removeAllRanges();
                     var menu = document.getElementById('uni-selection-menu');
@@ -1076,57 +1161,67 @@ class ReaderActivity : AppCompatActivity() {
                 }
                 
                 window.uniSelectionListener = function() {
-                    var sel = window.getSelection();
-                    var menu = document.getElementById('uni-selection-menu');
-                    if (!menu) return;
+                    try {
+                        var sel = window.getSelection();
+                        var menu = document.getElementById('uni-selection-menu');
+                        if (!menu) return;
 
-                    if (sel.isCollapsed || sel.rangeCount === 0) {
-                        menu.style.display = 'none';
-                        return;
-                    }
-                    
-                    var range = sel.getRangeAt(0);
-                    var container = range.commonAncestorContainer;
-                    if (container.nodeType === 3) container = container.parentNode;
-                    
-                    var btnHighlight = document.getElementById('uni-highlight-btn');
-                    var btnFix = document.getElementById('uni-fix-btn');
-                    
-                    var existingMark = container.closest('.uni-highlight');
-                    if (existingMark) {
-                        btnHighlight.innerText = 'Снять пометку';
-                        btnHighlight.setAttribute('data-mode', 'delete');
-                        btnHighlight.setAttribute('data-target-id', existingMark.getAttribute('data-id'));
-                        btnFix.style.display = 'none';
-                    } else {
-                        btnHighlight.innerText = 'Пометить';
-                        btnHighlight.setAttribute('data-mode', 'save');
-                        btnFix.style.display = 'block';
-                    }
-
-                    var rect = range.getBoundingClientRect();
-                    
-                    if (rect.width > 0 && rect.height > 0) {
-                        menu.style.display = 'flex';
-                        var menuWidth = menu.offsetWidth || 200;
-                        var menuHeight = menu.offsetHeight || 40;
-                        
-                        // Center horizontally
-                        var left = rect.left + (rect.width / 2) - (menuWidth / 2);
-                        left = Math.max(10, Math.min(window.innerWidth - menuWidth - 10, left));
-                        
-                        // Position above the selection (top) with some space
-                        var top = rect.top - menuHeight - 20; 
-                        
-                        // If too close to the top edge, move it below the selection
-                        if (top < 10) {
-                            top = rect.bottom + 20;
+                        if (sel.isCollapsed || sel.rangeCount === 0) {
+                            menu.style.display = 'none';
+                            return;
                         }
                         
-                        menu.style.left = left + 'px';
-                        menu.style.top = top + 'px';
-                    } else {
-                        menu.style.display = 'none';
+                        var range = sel.getRangeAt(0);
+                        var container = range.commonAncestorContainer;
+                        if (container.nodeType === 3) container = container.parentNode;
+                        
+                        var btnHighlight = document.getElementById('uni-highlight-btn');
+                        var btnFix = document.getElementById('uni-fix-btn');
+                        if (!btnHighlight || !btnFix) return;
+
+                        var existingMark = container.closest('.uni-highlight, .uni-fix');
+                        if (existingMark) {
+                            btnHighlight.innerText = 'Удалить';
+                            btnHighlight.setAttribute('data-mode', 'delete');
+                            btnHighlight.setAttribute('data-target-id', existingMark.getAttribute('data-id'));
+                            btnFix.style.display = 'none';
+                        } else {
+                            btnHighlight.innerText = 'Пометить';
+                            btnHighlight.setAttribute('data-mode', 'save');
+                            btnFix.style.display = 'block';
+                        }
+
+                        var rect = range.getBoundingClientRect();
+                        
+                        // Handle multi-line/complex rects
+                        if (rect.width === 0 && range.getClientRects().length > 0) {
+                            rect = range.getClientRects()[0];
+                        }
+
+                        if (rect.width > 0 && rect.height > 0) {
+                            menu.style.display = 'flex';
+                            var menuWidth = menu.offsetWidth || 200;
+                            var menuHeight = menu.offsetHeight || 40;
+                            
+                            // Center horizontally
+                            var left = rect.left + (rect.width / 2) - (menuWidth / 2);
+                            left = Math.max(10, Math.min(window.innerWidth - menuWidth - 10, left));
+                            
+                            // Position above the selection (top) with some space
+                            var top = rect.top - menuHeight - 20; 
+                            
+                            // If too close to the top edge, move it below the selection
+                            if (top < 10) {
+                                top = rect.bottom + 20;
+                            }
+                            
+                            menu.style.left = left + 'px';
+                            menu.style.top = top + 'px';
+                        } else {
+                            menu.style.display = 'none';
+                        }
+                    } catch (err) {
+                        console.error('UniReader: selectionchange error', err);
                     }
                 };
                 
@@ -1155,8 +1250,8 @@ class ReaderActivity : AppCompatActivity() {
                     var section = document.querySelector('section[data-index="' + spineIndex + '"]');
                     if (!section) return;
 
-                    // Clear existing highlights ONLY within this section
-                    section.querySelectorAll('.uni-highlight').forEach(m => {
+                    // Clear existing highlights AND fixes ONLY within this section
+                    section.querySelectorAll('.uni-highlight, .uni-fix').forEach(m => {
                         var p = m.parentNode;
                         while(m.firstChild) p.insertBefore(m.firstChild, m);
                         p.removeChild(m);
@@ -1192,9 +1287,11 @@ class ReaderActivity : AppCompatActivity() {
                             range.setEnd(endNode, endOffset);
                             
                             var mark = document.createElement('mark');
-                            mark.setAttribute('class', 'uni-highlight');
-                            mark.style.backgroundColor = h.color;
+                            var isFix = h.replacementText && h.replacementText.length > 0;
+                            mark.setAttribute('class', isFix ? 'uni-fix' : 'uni-highlight');
+                            if (!isFix) mark.style.backgroundColor = h.color;
                             mark.setAttribute('data-id', h.id);
+                            if (isFix) mark.setAttribute('data-replacement', h.replacementText);
                             
                             try {
                                 range.surroundContents(mark);
@@ -1209,6 +1306,28 @@ class ReaderActivity : AppCompatActivity() {
                 };
                 
                 document.body.addEventListener('click', function(e) {
+                    var fix = e.target.closest('.uni-fix');
+                    if (fix) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        var replacement = fix.getAttribute('data-replacement');
+                        if (replacement) {
+                            var rect = fix.getBoundingClientRect();
+                            tooltip.innerHTML = '<b>Исправленный вариант:</b>' + replacement;
+                            tooltip.style.display = 'block';
+                            
+                            var tWidth = tooltip.offsetWidth;
+                            var left = rect.left + (rect.width / 2) - (tWidth / 2);
+                            left = Math.max(10, Math.min(window.innerWidth - tWidth - 10, left));
+                            var top = rect.top - tooltip.offsetHeight - 10;
+                            if (top < 10) top = rect.bottom + 10;
+                            
+                            tooltip.style.left = left + 'px';
+                            tooltip.style.top = top + 'px';
+                        }
+                        return;
+                    }
+
                     var img = e.target.closest('img');
                     if (img && img.getAttribute('src')) {
                         e.preventDefault();
@@ -2073,6 +2192,7 @@ class ReaderActivity : AppCompatActivity() {
                 },
                 onSuccess = { result, model ->
                     runOnUiThread {
+                        lastImprovedText = result
                         fixLoading.visibility = View.GONE
                         fixActions.visibility = View.VISIBLE
                         tvFixResult.text = result
@@ -2090,6 +2210,36 @@ class ReaderActivity : AppCompatActivity() {
                     }
                 }
             )
+        }
+    }
+
+    private fun acceptImprovement() {
+        val improved = lastImprovedText ?: return
+        val lastRequest = lastFixRequestJson?.let { JSONObject(it) } ?: return
+        
+        Log.d("Reader", "Accepting improvement. Directly saving to DB using cached positions.")
+        
+        try {
+            val highlight = Highlight(
+                bookUri = epubBook?.uri.toString(),
+                spineIndex = lastRequest.getInt("spineIndex"),
+                elementIdx = lastRequest.getInt("elementIdx"),
+                startOffset = lastRequest.getInt("startOffset"),
+                endOffset = lastRequest.getInt("endOffset"),
+                originalText = lastRequest.getString("text"),
+                replacementText = improved
+            )
+            
+            val id = highlightDb.saveHighlight(highlight)
+            Log.d("Reader", "Directly saved fix with ID: $id")
+            
+            // Refresh visuals
+            webView.evaluateJavascript("applyHighlights('${getHighlightsJson(highlight.spineIndex)}')", null)
+            fixOverlay.visibility = View.GONE
+            
+        } catch (e: Exception) {
+            Log.e("Reader", "Error during direct save", e)
+            Toast.makeText(this, "Ошибка сохранения", Toast.LENGTH_SHORT).show()
         }
     }
 }

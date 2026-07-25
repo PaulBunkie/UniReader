@@ -1,35 +1,41 @@
-# Implementation Plan: Add "Retry" and "Save" Buttons to Improvement Overlay
+# Implementation Plan: Save Text Improvements with Visual Feedback
 
-This plan adds two buttons to the "Improvement" overlay to allow the user to re-trigger the API request or save the result.
+This plan implements saving text improvements to the local database and displaying them in the reader with a distinct highlight and an interactive overlay.
+
+## User Review Required
+
+> [!NOTE]
+> **Visual Styling:**
+> - Improvements will be highlighted in **Light Green** (instead of the standard yellow for highlights).
+> - Tapping a green highlight will show a small overlay with the improved version of the text.
+> - The original text remains in the document, but it is visually marked.
 
 ## Proposed Changes
 
-### [ReaderActivity UI]
+### [Database & Model]
+- **`Highlight.kt`**: Ensure the `replacementText` property is correctly serialized/deserialized.
+- **`HighlightDatabase.kt`**: Already supports `replacement_text`, no changes needed.
 
-#### [MODIFY] [activity_reader.xml](file:///C:/Users/Владелец/AndroidStudioProjects/UniReader/app/src/main/res/layout/activity_reader.xml)
-- Add a `LinearLayout` container at the bottom of the `fixOverlay` (inside the vertical `LinearLayout`).
-- Add a "Retry" button (label: "Обновить").
-- Add a "Save" button (label: "Сохранить").
-- Initially hide this button container (`android:visibility="gone"`).
-
-### [ReaderActivity Logic]
+### [Reader Logic - ReaderActivity.kt]
 
 #### [MODIFY] [ReaderActivity.kt](file:///C:/Users/Владелец/AndroidStudioProjects/UniReader/app/src/main/java/com/example/unireader/ReaderActivity.kt)
-- Declare new properties for the buttons and the button container.
-- Declare a property `lastFixRequestJson: String?` to store the last request data.
-- In `onCreate`, bind the new views and set click listeners:
-    - **Refresh Button**: Calls `showFixOverlay(lastFixRequestJson!!)` to retry the same request.
-    - **Save Button**: Shows a placeholder Toast ("Сохранение будет реализовано позже").
-- In `showFixOverlay`:
-    - Store the incoming `json` into `lastFixRequestJson`.
-    - Hide the button container while loading starts.
-    - Show the button container once the API call finishes (either `onSuccess` or `onError`).
+- **Save Action**: Implement `acceptImprovement()`:
+    - Trigger a JS call `getSelectionDetails(true, improvedText)` to get the selection offsets and original text, then call back to `saveHighlight`.
+- **Bridge Updates**:
+    - Update `AndroidReader.saveHighlight(json)` to parse `replacementText` and save it to the DB.
+- **UI Updates**:
+    - Update `getHighlightsJson()` to include the `replacementText` field for each highlight.
+    - Update CSS in `applyCurrentSettings()` to include styles for `.uni-fix` (the green highlight).
+    - Update `injectIndexingScript()`:
+        - **JS `applyHighlights`**: If `replacementText` is present, use class `.uni-fix` instead of `.uni-highlight`.
+        - **JS Interaction**: Add a listener to show a "bubble" tooltip when a `.uni-fix` element is tapped. The tooltip will display the improved text.
+        - **JS `getSelectionDetails`**: Update to support passing `replacementText`.
 
 ## Verification Plan
 
 ### Manual Verification
-1. Select text and click "Исправить".
-2. Verify that while loading, only the progress bar and status text are visible.
-3. Once the result is received, verify that "Обновить" and "Сохранить" buttons appear.
-4. Click "Обновить" and verify that the request is sent again (loading appears).
-5. Click "Сохранить" and verify the placeholder Toast message appears.
+1. Select text, click "Исправить", wait for result.
+2. Click "Сохранить".
+3. Verify the selection turns **Green**.
+4. Tap the green area and verify a small overlay appears showing the improved text.
+5. Close and reopen the book to verify the green highlight persists.

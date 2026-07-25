@@ -1,8 +1,13 @@
-# Task List: Add Retry and Save Buttons
+# Task List: Save Text Improvements
 
-- [x] Update `activity_reader.xml`: add buttons to `fixOverlay`
 - [x] Update `ReaderActivity.kt`:
-    - [x] Add properties for new buttons
-    - [x] Implement click listeners in `onCreate`
-    - [x] Update `showFixOverlay` to manage button visibility and store last request
+    - [x] Update `getHighlightsJson` to include `replacementText`
+    - [x] Update `applyCurrentSettings` with `.uni-fix` CSS
+    - [x] Update `injectIndexingScript`:
+        - [x] Update `getSelectionDetails` JS function
+        - [x] Update `applyHighlights` JS function to handle replacements
+        - [x] Add JS logic for showing/hiding improvement tooltips
+    - [x] Update Android-JS bridge (`saveHighlight`)
+    - [x] Implement `acceptImprovement()` logic
+    - [x] Bind `btnFixAccept` click listener
 - [x] Verify functionality
