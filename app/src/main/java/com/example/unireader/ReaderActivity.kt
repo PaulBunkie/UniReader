@@ -3,6 +3,7 @@ package com.example.unireader
 import android.annotation.SuppressLint
 import android.util.Log
 import android.content.Intent
+import android.net.Uri
 import android.content.res.Configuration
 import android.os.Build
 import android.os.Bundle
@@ -25,6 +26,7 @@ import android.widget.Toast
 import org.json.JSONObject
 import org.json.JSONArray
 import androidx.activity.OnBackPressedCallback
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.Keep
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.Toolbar
@@ -39,6 +41,7 @@ import androidx.lifecycle.lifecycleScope
 import com.google.android.material.appbar.AppBarLayout
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.ByteArrayInputStream
 import java.io.File
 import java.util.zip.ZipInputStream
@@ -89,6 +92,10 @@ class ReaderActivity : AppCompatActivity() {
     private val fixService = FixService()
     private var lastFixRequestJson: String? = null
     private var lastImprovedText: String? = null
+
+    private val saveDocumentLauncher = registerForActivityResult(ActivityResultContracts.CreateDocument("application/epub+zip")) { uri ->
+        uri?.let { performSave(it) }
+    }
 
     private val hideBrightnessRunnable = Runnable { 
         findViewById<View>(R.id.tvBrightnessHint)?.visibility = View.GONE 
@@ -252,7 +259,19 @@ class ReaderActivity : AppCompatActivity() {
                 true
             }
             R.id.action_settings -> {
-                ReaderSettingsSheet().show(supportFragmentManager, "settings")
+                val anchor = findViewById<View>(R.id.action_settings) ?: appBarLayout
+                val popup = androidx.appcompat.widget.PopupMenu(this, anchor)
+                popup.menu.add("Appearance").setOnMenuItemClickListener {
+                    ReaderSettingsSheet().show(supportFragmentManager, "settings")
+                    true
+                }
+                popup.menu.add("Save Updates").setOnMenuItemClickListener {
+                    val book = epubBook ?: return@setOnMenuItemClickListener true
+                    val fileName = book.uri.toString().substringAfterLast("/").substringBeforeLast(".") + "_improved.epub"
+                    saveDocumentLauncher.launch(fileName)
+                    true
+                }
+                popup.show()
                 true
             }
             else -> super.onOptionsItemSelected(item)
@@ -2239,7 +2258,41 @@ class ReaderActivity : AppCompatActivity() {
             
         } catch (e: Exception) {
             Log.e("Reader", "Error during direct save", e)
-            Toast.makeText(this, "Ошибка сохранения", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Error saving", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun performSave(destinationUri: Uri) {
+        val book = epubBook ?: return
+        val bookUriString = book.uri.toString()
+        val pendingFixes = highlightDb.getPendingFixes(bookUriString)
+        
+        if (pendingFixes.isEmpty()) {
+            Toast.makeText(this, "No pending fixes to save", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val progressDialog = android.app.ProgressDialog(this).apply {
+            setMessage("Saving improved copy...")
+            setCancelable(false)
+            show()
+        }
+
+        lifecycleScope.launch(Dispatchers.IO) {
+            val success = EpubModifier(this@ReaderActivity).applyFixes(book, pendingFixes, destinationUri)
+            
+            withContext(Dispatchers.Main) {
+                progressDialog.dismiss()
+                if (success) {
+                    highlightDb.deleteFixes(bookUriString)
+                    Toast.makeText(this@ReaderActivity, "Saved successfully", Toast.LENGTH_LONG).show()
+                    
+                    // Note: We don't reload here because we saved to a NEW file.
+                    // The current reader is still pointing to the original URI.
+                } else {
+                    Toast.makeText(this@ReaderActivity, "Error saving file", Toast.LENGTH_LONG).show()
+                }
+            }
         }
     }
 }

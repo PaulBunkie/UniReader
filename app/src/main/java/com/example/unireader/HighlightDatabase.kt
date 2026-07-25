@@ -93,4 +93,38 @@ class HighlightDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_N
         }
         return highlights
     }
+
+    fun getPendingFixes(bookUri: String): List<Highlight> {
+        val highlights = mutableListOf<Highlight>()
+        val db = readableDatabase
+        val cursor = db.query(
+            TABLE_HIGHLIGHTS,
+            null,
+            "$COLUMN_BOOK_URI = ? AND $COLUMN_REPLACEMENT_TEXT IS NOT NULL",
+            arrayOf(bookUri),
+            null, null, null
+        )
+
+        cursor?.use {
+            while (it.moveToNext()) {
+                highlights.add(Highlight(
+                    id = it.getLong(it.getColumnIndexOrThrow(COLUMN_ID)),
+                    bookUri = it.getString(it.getColumnIndexOrThrow(COLUMN_BOOK_URI)),
+                    spineIndex = it.getInt(it.getColumnIndexOrThrow(COLUMN_SPINE_INDEX)),
+                    elementIdx = it.getInt(it.getColumnIndexOrThrow(COLUMN_ELEMENT_IDX)),
+                    startOffset = it.getInt(it.getColumnIndexOrThrow(COLUMN_START_OFFSET)),
+                    endOffset = it.getInt(it.getColumnIndexOrThrow(COLUMN_END_OFFSET)),
+                    originalText = it.getString(it.getColumnIndexOrThrow(COLUMN_ORIGINAL_TEXT)),
+                    replacementText = it.getString(it.getColumnIndexOrThrow(COLUMN_REPLACEMENT_TEXT)),
+                    color = it.getString(it.getColumnIndexOrThrow(COLUMN_COLOR))
+                ))
+            }
+        }
+        return highlights
+    }
+
+    fun deleteFixes(bookUri: String) {
+        val db = writableDatabase
+        db.delete(TABLE_HIGHLIGHTS, "$COLUMN_BOOK_URI = ? AND $COLUMN_REPLACEMENT_TEXT IS NOT NULL", arrayOf(bookUri))
+    }
 }

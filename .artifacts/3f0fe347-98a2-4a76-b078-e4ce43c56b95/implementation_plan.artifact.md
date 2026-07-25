@@ -1,41 +1,37 @@
-# Implementation Plan: Save Text Improvements with Visual Feedback
+# Implementation Plan: Save Improved EPUB to a New File
 
-This plan implements saving text improvements to the local database and displaying them in the reader with a distinct highlight and an interactive overlay.
-
-## User Review Required
-
-> [!NOTE]
-> **Visual Styling:**
-> - Improvements will be highlighted in **Light Green** (instead of the standard yellow for highlights).
-> - Tapping a green highlight will show a small overlay with the improved version of the text.
-> - The original text remains in the document, but it is visually marked.
+This plan addresses the `SecurityException` by implementing a "Save As" flow. Instead of overwriting the original source, the app will create a new EPUB file containing all text improvements.
 
 ## Proposed Changes
 
-### [Database & Model]
-- **`Highlight.kt`**: Ensure the `replacementText` property is correctly serialized/deserialized.
-- **`HighlightDatabase.kt`**: Already supports `replacement_text`, no changes needed.
-
-### [Reader Logic - ReaderActivity.kt]
+### [Reader UI - Menu Refactoring]
 
 #### [MODIFY] [ReaderActivity.kt](file:///C:/Users/Владелец/AndroidStudioProjects/UniReader/app/src/main/java/com/example/unireader/ReaderActivity.kt)
-- **Save Action**: Implement `acceptImprovement()`:
-    - Trigger a JS call `getSelectionDetails(true, improvedText)` to get the selection offsets and original text, then call back to `saveHighlight`.
-- **Bridge Updates**:
-    - Update `AndroidReader.saveHighlight(json)` to parse `replacementText` and save it to the DB.
-- **UI Updates**:
-    - Update `getHighlightsJson()` to include the `replacementText` field for each highlight.
-    - Update CSS in `applyCurrentSettings()` to include styles for `.uni-fix` (the green highlight).
-    - Update `injectIndexingScript()`:
-        - **JS `applyHighlights`**: If `replacementText` is present, use class `.uni-fix` instead of `.uni-highlight`.
-        - **JS Interaction**: Add a listener to show a "bubble" tooltip when a `.uni-fix` element is tapped. The tooltip will display the improved text.
-        - **JS `getSelectionDetails`**: Update to support passing `replacementText`.
+- Update the `PopupMenu` for the Settings icon to use English labels:
+    - **Appearance**: Opens the settings sheet.
+    - **Save Improved Copy**: Triggers the file creation flow.
+- Implement a `registerForActivityResult` with `ActivityResultContracts.CreateDocument("application/epub+zip")`.
+- When the user selects a destination, launch `EpubModifier`.
+
+### [EPUB Modification Logic]
+
+#### [MODIFY] [EpubModifier.kt](file:///C:/Users/Владелец/AndroidStudioProjects/UniReader/app/src/main/java/com/example/unireader/EpubModifier.kt)
+- Update `applyFixes` to accept `sourceUri` and `destinationUri`.
+- Ensure it streams content from the source ZIP to the destination ZIP, applying Jsoup modifications only to the files with pending fixes.
+- Maintain EPUB validity (uncompressed `mimetype` first).
+
+### [Database Layer]
+
+#### [MODIFY] [HighlightDatabase.kt](file:///C:/Users/Владелец/AndroidStudioProjects/UniReader/app/src/main/java/com/example/unireader/HighlightDatabase.kt)
+- No changes needed (already has `getPendingFixes`).
 
 ## Verification Plan
 
 ### Manual Verification
-1. Select text, click "Исправить", wait for result.
-2. Click "Сохранить".
-3. Verify the selection turns **Green**.
-4. Tap the green area and verify a small overlay appears showing the improved text.
-5. Close and reopen the book to verify the green highlight persists.
+1. Make a few green fixes in the book.
+2. Select **Settings (⚙️)** -> **Save Improved Copy**.
+3. Choose a destination (e.g., Downloads folder) and a new name (e.g., `book_fixed.epub`).
+4. Wait for the progress dialog to finish.
+5. Locate the new file and open it.
+6. Verify that the text improvements are now part of the permanent text of the new book.
+7. Verify the original book remains unchanged.
