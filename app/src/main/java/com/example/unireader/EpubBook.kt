@@ -13,7 +13,8 @@ data class EpubBook(
     val author: String?,
     val spine: List<SpineItem>,
     val opfPath: String,
-    val toc: List<TocItem> = emptyList()
+    val toc: List<TocItem> = emptyList(),
+    val tocPath: String? = null
 )
 
 data class SpineItem(

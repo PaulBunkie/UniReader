@@ -7,5 +7,9 @@ data class BookMetadata(
     var lastSpineIndex: Int = 0,
     var lastElementIndex: Int = -1,
     var lastAnchor: String? = null,
-    var lastCharOffset: Int = -1
+    var lastCharOffset: Int = -1,
+    var isTranslationMode: Boolean = false,
+    var isTocTranslated: Boolean = false,
+    var translationGuidelines: String? = null,
+    var localCopyUri: String? = null
 )

@@ -17,6 +17,116 @@ import java.util.zip.ZipOutputStream
 
 class EpubModifier(private val context: Context) {
 
+    fun createLocalCopy(sourceUri: Uri): Uri? {
+        val fileName = "book_${System.currentTimeMillis()}.epub"
+        val localFile = File(context.filesDir, fileName)
+        
+        try {
+            context.contentResolver.openInputStream(sourceUri)?.use { input ->
+                localFile.outputStream().use { output ->
+                    input.copyTo(output)
+                }
+            }
+            return Uri.fromFile(localFile)
+        } catch (e: Exception) {
+            Log.e("EpubModifier", "Error creating local copy", e)
+            return null
+        }
+    }
+
+    fun replaceEntry(epubUri: Uri, entryName: String, content: String): Boolean {
+        Log.d("EpubModifier", "replaceEntry: target=$entryName uri=$epubUri")
+        val path = epubUri.path ?: return false
+        val sourceFile = File(path)
+        if (!sourceFile.exists()) {
+            Log.e("EpubModifier", "replaceEntry: Source file does not exist: $path")
+            return false
+        }
+
+        val tempFile = File(context.cacheDir, "temp_mod_${System.currentTimeMillis()}.epub")
+        val normalizedTarget = entryName.replace("\\", "/")
+        
+        var replaced = false
+        try {
+            sourceFile.inputStream().use { inputStream ->
+                ZipOutputStream(FileOutputStream(tempFile)).use { zos ->
+                    val zis = ZipInputStream(inputStream)
+                    
+                    var entry = zis.nextEntry
+                    while (entry != null) {
+                        val name = entry.name
+                        val normalizedName = name.replace("\\", "/")
+                        
+                        val newEntry = ZipEntry(name)
+                        if (normalizedName == "mimetype") {
+                            newEntry.method = ZipEntry.STORED
+                            val bytes = zis.readBytes()
+                            newEntry.size = bytes.size.toLong()
+                            newEntry.compressedSize = bytes.size.toLong()
+                            newEntry.crc = calculateCrc(bytes)
+                            zos.putNextEntry(newEntry)
+                            zos.write(bytes)
+                        } else if (normalizedName == normalizedTarget) {
+                            Log.d("EpubModifier", "replaceEntry: Found target entry $name, writing new content")
+                            zos.putNextEntry(newEntry)
+                            zos.write(content.toByteArray(Charsets.UTF_8))
+                            replaced = true
+                        } else {
+                            zos.putNextEntry(newEntry)
+                            zis.copyTo(zos)
+                        }
+                        zos.closeEntry()
+                        entry = zis.nextEntry
+                    }
+                }
+            }
+            
+            if (!replaced) {
+                Log.e("EpubModifier", "replaceEntry: Target entry $normalizedTarget not found in ZIP")
+                tempFile.delete()
+                return false
+            }
+
+            // Overwrite original file directly
+            tempFile.inputStream().use { input ->
+                sourceFile.outputStream().use { output ->
+                    input.copyTo(output)
+                }
+            }
+            tempFile.delete()
+            Log.d("EpubModifier", "replaceEntry: Successfully updated $normalizedTarget")
+            return true
+            
+        } catch (e: Exception) {
+            Log.e("EpubModifier", "replaceEntry: Error replacing entry", e)
+            if (tempFile.exists()) tempFile.delete()
+            return false
+        }
+    }
+
+    fun readEntry(epubUri: Uri, entryName: String): String? {
+        val path = epubUri.path ?: return null
+        val sourceFile = File(path)
+        if (!sourceFile.exists()) return null
+        
+        val normalizedTarget = entryName.replace("\\", "/")
+        try {
+            sourceFile.inputStream().use { inputStream ->
+                val zis = ZipInputStream(inputStream)
+                var entry = zis.nextEntry
+                while (entry != null) {
+                    if (entry.name.replace("\\", "/") == normalizedTarget) {
+                        return zis.readBytes().toString(Charsets.UTF_8)
+                    }
+                    entry = zis.nextEntry
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("EpubModifier", "Error reading entry $entryName", e)
+        }
+        return null
+    }
+
     fun applyFixes(book: EpubBook, fixes: List<Highlight>, destinationUri: Uri): Boolean {
         try {
             context.contentResolver.openInputStream(book.uri)?.use { inputStream ->

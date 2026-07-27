@@ -17,6 +17,7 @@ import android.content.Intent
 import android.net.Uri
 import androidx.activity.result.contract.ActivityResultContracts
 import com.example.unireader.databinding.ActivityMainBinding
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 
 class MainActivity : AppCompatActivity() {
 
@@ -29,19 +30,49 @@ class MainActivity : AppCompatActivity() {
             
             val epubBook = EpubParser(this).parse(it)
             if (epubBook != null) {
-                val libraryProvider = LibraryProvider(this)
-                libraryProvider.addBook(BookMetadata(
-                    uri = it.toString(),
-                    title = epubBook.title ?: "Unknown Title",
-                    author = epubBook.author ?: "Unknown Author"
-                ))
+                showReadModeDialog(it, epubBook)
             }
-
-            val intent = Intent(this, ReaderActivity::class.java).apply {
-                putExtra("epub_uri", it.toString())
-            }
-            startActivity(intent)
         }
+    }
+
+    private fun showReadModeDialog(uri: Uri, book: EpubBook) {
+        MaterialAlertDialogBuilder(this)
+            .setTitle("Select Reading Mode")
+            .setMessage("Enable AI translation?")
+            .setNeutralButton("Cancel", null)
+            .setNegativeButton("Original") { _, _ ->
+                openBook(uri, book, isTranslation = false)
+            }
+            .setPositiveButton("Translate & Read") { _, _ ->
+                openBook(uri, book, isTranslation = true)
+            }
+            .show()
+    }
+
+    private fun openBook(uri: Uri, epubBook: EpubBook, isTranslation: Boolean) {
+        val libraryProvider = LibraryProvider(this)
+        val sourceUriString = uri.toString()
+        var localCopyUriString: String? = null
+        
+        if (isTranslation) {
+            val localCopy = EpubModifier(this).createLocalCopy(uri)
+            if (localCopy != null) {
+                localCopyUriString = localCopy.toString()
+            }
+        }
+
+        libraryProvider.addBook(BookMetadata(
+            uri = sourceUriString,
+            title = epubBook.title ?: "Unknown Title",
+            author = epubBook.author ?: "Unknown Author",
+            isTranslationMode = isTranslation,
+            localCopyUri = localCopyUriString
+        ))
+
+        val intent = Intent(this, ReaderActivity::class.java).apply {
+            putExtra("epub_uri", sourceUriString)
+        }
+        startActivity(intent)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {

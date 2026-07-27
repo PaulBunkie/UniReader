@@ -20,7 +20,11 @@ class LibraryProvider(private val context: Context) {
                 lastSpineIndex = obj.optInt("lastSpineIndex", 0),
                 lastElementIndex = obj.optInt("lastElementIndex", -1),
                 lastAnchor = obj.optString("lastAnchor", null),
-                lastCharOffset = obj.optInt("lastCharOffset", -1)
+                lastCharOffset = obj.optInt("lastCharOffset", -1),
+                isTranslationMode = obj.optBoolean("isTranslationMode", false),
+                isTocTranslated = obj.optBoolean("isTocTranslated", false),
+                translationGuidelines = obj.optString("translationGuidelines", null),
+                localCopyUri = obj.optString("localCopyUri", null)
             ))
         }
         return list
@@ -28,8 +32,12 @@ class LibraryProvider(private val context: Context) {
 
     fun addBook(book: BookMetadata) {
         val books = getBooks()
-        if (books.any { it.uri == book.uri }) return
-        books.add(book)
+        val index = books.indexOfFirst { it.uri == book.uri }
+        if (index != -1) {
+            books[index] = book // Update existing
+        } else {
+            books.add(book) // Add new
+        }
         saveBooks(books)
     }
 
@@ -61,6 +69,10 @@ class LibraryProvider(private val context: Context) {
             obj.put("lastElementIndex", book.lastElementIndex)
             obj.put("lastCharOffset", book.lastCharOffset)
             obj.put("lastAnchor", book.lastAnchor)
+            obj.put("isTranslationMode", book.isTranslationMode)
+            obj.put("isTocTranslated", book.isTocTranslated)
+            obj.put("translationGuidelines", book.translationGuidelines)
+            obj.put("localCopyUri", book.localCopyUri)
             array.put(obj)
         }
         prefs.edit().putString("books", array.toString()).apply()

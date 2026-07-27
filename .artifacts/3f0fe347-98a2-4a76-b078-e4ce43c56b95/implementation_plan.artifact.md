@@ -1,37 +1,45 @@
-# Implementation Plan: Save Improved EPUB to a New File
+# Implementation Plan: Robust Queue & Reactive Refresh
 
-This plan addresses the `SecurityException` by implementing a "Save As" flow. Instead of overwriting the original source, the app will create a new EPUB file containing all text improvements.
+This plan fixes the translation stalls and ensures all server tasks are completed and saved. It respects the core reader logic by using standard file-based loading and avoids redundant task cancellations.
+
+## User Review Required
+
+> [!IMPORTANT]
+> **No More Wasted Tasks:**
+> - The `TranslationManager` will now use a persistent task pool (`activeTasks`).
+> - Moving to another chapter will **not** cancel ongoing translations. The app will finish polling and save every chapter it starts.
+>
+> **Core Reader Fidelity:**
+> - The app will continue to read content directly from the local EPUB copy.
+> - Background tasks will swap the XHTML entries in that copy.
+> - The UI will refresh using the standard `loadSpineItem` call once the file is ready.
 
 ## Proposed Changes
 
-### [Reader UI - Menu Refactoring]
+### [Translation Orchestration - TranslationManager.kt]
+
+#### [MODIFY] [TranslationManager.kt](file:///C:/Users/Владелец/AndroidStudioProjects/UniReader/app/src/main/java/com/example/unireader/TranslationManager.kt)
+- **Persistent Pool**: Replace `currentJob` with `activeTasks: ConcurrentHashMap<Int, Job>`.
+- **Logic Refinement**:
+    - `queueTranslation(index)` check: If `index` is in `activeTasks`, do nothing.
+    - `onChapterVisible(index)`: Ensure `index`, `index+1`, and `index+2` are queued.
+- **Initial Load**: Queue TOC, Ch 0, Ch 1, and Ch 2 immediately upon initialization.
+
+### [Reader Logic - ReaderActivity.kt]
 
 #### [MODIFY] [ReaderActivity.kt](file:///C:/Users/Владелец/AndroidStudioProjects/UniReader/app/src/main/java/com/example/unireader/ReaderActivity.kt)
-- Update the `PopupMenu` for the Settings icon to use English labels:
-    - **Appearance**: Opens the settings sheet.
-    - **Save Improved Copy**: Triggers the file creation flow.
-- Implement a `registerForActivityResult` with `ActivityResultContracts.CreateDocument("application/epub+zip")`.
-- When the user selects a destination, launch `EpubModifier`.
-
-### [EPUB Modification Logic]
-
-#### [MODIFY] [EpubModifier.kt](file:///C:/Users/Владелец/AndroidStudioProjects/UniReader/app/src/main/java/com/example/unireader/EpubModifier.kt)
-- Update `applyFixes` to accept `sourceUri` and `destinationUri`.
-- Ensure it streams content from the source ZIP to the destination ZIP, applying Jsoup modifications only to the files with pending fixes.
-- Maintain EPUB validity (uncompressed `mimetype` first).
-
-### [Database Layer]
-
-#### [MODIFY] [HighlightDatabase.kt](file:///C:/Users/Владелец/AndroidStudioProjects/UniReader/app/src/main/java/com/example/unireader/HighlightDatabase.kt)
-- No changes needed (already has `getPendingFixes`).
+- **Responsive Startup**:
+    - `initTranslation`: Wait ONLY for Chapter 0 (the one on screen). As soon as it's ready, hide the initial overlay to let the user swipe.
+- **Native Refresh**:
+    - In `onChapterReady(index)` callback: If `index == currentSpineIndex`, call `loadSpineItem(index)`.
+- **Reactive Clock**:
+    - `processingOverlay.visibility` will be `VISIBLE` only if `currentSpineIndex` is a key in the manager's `activeTasks` map.
 
 ## Verification Plan
 
 ### Manual Verification
-1. Make a few green fixes in the book.
-2. Select **Settings (⚙️)** -> **Save Improved Copy**.
-3. Choose a destination (e.g., Downloads folder) and a new name (e.g., `book_fixed.epub`).
-4. Wait for the progress dialog to finish.
-5. Locate the new file and open it.
-6. Verify that the text improvements are now part of the permanent text of the new book.
-7. Verify the original book remains unchanged.
+1. Open a new book -> Wait for Ch 0 -> Overlay disappears.
+2. Swipe to Ch 1 (Original).
+3. Watch logs -> Verify Ch 1, Ch 2, and Ch 3 are being processed simultaneously or sequentially without cancellations.
+4. Stay on Ch 1 -> Verify it "turns" Russian automatically without you having to re-open the book.
+5. Verify "Sand Clock" appears only when the active chapter is being translated.

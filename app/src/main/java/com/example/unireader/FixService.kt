@@ -10,7 +10,7 @@ import java.io.IOException
 
 class FixService {
     private val client = OkHttpClient()
-    private val baseUrl = "http://136.109.52.87:8080/api"
+    private val baseUrl = "http://10.0.2.2:8080/api"
     private val jsonMediaType = "application/json; charset=utf-8".toMediaType()
 
     suspend fun improveText(

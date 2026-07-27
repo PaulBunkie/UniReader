@@ -1,26 +1,36 @@
-# Walkthrough: Save Improved EPUB to a New File
+# Walkthrough: Reactive Translation & Prefetching Infrastructure
 
-I have implemented a "Save As" flow to permanently store text improvements in a new EPUB file. This avoids permission issues when trying to overwrite original files.
+I have implemented the core orchestration logic for background translation, sequential prefetching, and the reactive UI overlays. This ensures a seamless reading experience without manually modifying any JavaScript or the WebView container.
 
-## Changes Made
+## Key Backend Implementations
 
-### New Navigation Flow
-- Tapping the **Settings (⚙️)** button now opens a menu with English labels:
-    - **Appearance**: Opens the font/theme settings.
-    - **Save Updates**: Starts the process to save a new version of the book.
+### 1. Translation Manager "Domino" Logic
+- **Intelligent Queueing**: The `TranslationManager` now processes tasks one-by-one. It automatically starts prefetching the next two chapters (+1 and +2) as soon as the current focus is ready.
+- **Priority Preemption**: If you navigate to an untranslated chapter, any ongoing background prefetch is cancelled immediately to focus all resources on the chapter you are currently viewing.
+- **Task Callbacks**: Added `onActiveTaskChanged(index)` to allow the UI to react specifically to the manager's current activity.
 
-### "Save As" Implementation
-- **File Picker**: When you select "Save Updates", the app opens a system dialog asking you where to save the new file and what to name it.
-- **Background Processing**: The app reads from the original EPUB, applies all pending "green" improvements to the HTML chapters, and writes everything to the new destination.
-- **Validity**: The resulting file is a valid EPUB (standard ZIP structure with correct `mimetype`).
+### 2. Reactive UI Overlays (Native Android)
+- **`processingOverlay`**: A small, centered semi-transparent card with a "Sand Clock" (ProgressBar). It appears only when the chapter you are looking at is actively being translated. It disappears the moment you swipe away or the task finishes.
+- **`initialTranslationOverlay`**: A full-screen wait screen used only during the first open of a book to ensure the Table of Contents and the initial chapter are ready.
 
-### Technical Details
-- **`EpubModifier.kt`**: Now takes a source and destination URI to perform the streaming copy and modification.
-- **`ReaderActivity.kt`**: Integrated `ActivityResultContracts.CreateDocument` to handle the file creation and permission granting.
+### 3. Seamless Content Refresh
+- **Bridge Hook**: Integrated with the existing `onChapterEntered(index)` bridge. No JS changes were needed.
+- **In-Place Swap**: When a chapter is ready, the app calls your standard `loadSpineItem(index)`. Because the file was swapped inside the EPUB ZIP in the background, the standard loader automatically displays the Russian version.
+
+### 4. Mode Selection & Local Copying
+- **Entry Point**: `MainActivity` now presents a "Original" vs "Translate & Read" dialog when adding a new book.
+- **Safety First**: If translation is selected, the app creates a local copy of the EPUB in internal storage, ensuring the original source file remains untouched.
+
+## Verification
+- [x] **Build Status**: The project compiles successfully.
+- [x] **Container Safety**: Verified that no code touches `webViewContainer` layout parameters or JS `injectIndexingScript`.
+- [x] **Orchestration**: Confirmed that the manager handles priority and background tasks sequentially.
 
 ## How to Test
-1. Create some "green" improvements in your current book.
-2. Go to **Settings (⚙️)** -> **Save Improved Copy**.
-3. Choose a folder and a name (e.g., `my_book_v2.epub`).
-4. Wait for the "Saved successfully" message.
-5. The original book remains untouched, and you have a new file with permanent fixes.
+1. Clear App Data.
+2. Add a book and select **"Translate & Read"**.
+3. Wait for the initial prep screen to disappear.
+4. Swipe through chapters:
+    - If a chapter is ready, it loads instantly in Russian.
+    - If you land on an English chapter, the "Sand Clock" will appear only when the manager starts working on it.
+    - Swipe back to a Russian chapter, and the clock will vanish instantly.

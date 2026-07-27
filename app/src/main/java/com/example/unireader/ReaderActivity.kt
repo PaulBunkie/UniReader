@@ -93,6 +93,11 @@ class ReaderActivity : AppCompatActivity() {
     private var lastFixRequestJson: String? = null
     private var lastImprovedText: String? = null
 
+    private var translationManager: TranslationManager? = null
+    private var currentBookMetadata: BookMetadata? = null
+    private lateinit var processingOverlay: View
+    private lateinit var initialTranslationOverlay: View
+
     private val saveDocumentLauncher = registerForActivityResult(ActivityResultContracts.CreateDocument("application/epub+zip")) { uri ->
         uri?.let { performSave(it) }
     }
@@ -141,6 +146,9 @@ class ReaderActivity : AppCompatActivity() {
             acceptImprovement()
         }
 
+        processingOverlay = findViewById(R.id.processingOverlay)
+        initialTranslationOverlay = findViewById(R.id.initialTranslationOverlay)
+
         appBarLayout = findViewById(R.id.appBarLayout)
         bottomPanel = findViewById(R.id.bottomPanel)
         webView = findViewById(R.id.webView)
@@ -185,16 +193,28 @@ class ReaderActivity : AppCompatActivity() {
 
         if (uriString != null) {
             val uri = uriString.toUri()
-            epubBook = EpubParser(this).parse(uri)
+            
+            // LOAD METADATA
+            val libraryProvider = LibraryProvider(this)
+            val metadata = libraryProvider.getBooks().find { it.uri == uriString }
+            currentBookMetadata = metadata
+
+            // In translation mode, we should open the LOCAL COPY for reading/writing
+            val finalUri = if (metadata?.isTranslationMode == true && metadata.localCopyUri != null) {
+                metadata.localCopyUri!!.toUri()
+            } else {
+                uri
+            }
+
+            epubBook = EpubParser(this).parse(finalUri)
+            
             epubBook?.let { book ->
                 chapterLoader = ChapterLoader(this, book)
                 updateBookTitles()
                 
-                // If it's a fresh open (no pending index from saveState), check LibraryProvider
+                // If it's a fresh open (no pending index from saveState), check metadata
                 if (savedInstanceState == null) {
-                    val libraryProvider = LibraryProvider(this)
-                    val savedBook = libraryProvider.getBooks().find { it.uri == uriString }
-                    if (savedBook != null) {
+                    metadata?.let { savedBook ->
                         currentSpineIndex = savedBook.lastSpineIndex
                         pendingElementIndex = savedBook.lastElementIndex
                         pendingCharOffset = savedBook.lastCharOffset
@@ -202,7 +222,20 @@ class ReaderActivity : AppCompatActivity() {
                     }
                 }
                 
-                loadSpineItem(currentSpineIndex)
+                if (metadata?.isTranslationMode == true) {
+                    val isFirstOpen = metadata.lastSpineIndex == 0 && metadata.lastElementIndex == -1
+                    val isCurrentReady = translationManager?.isChapterTranslated(currentSpineIndex) == true
+                    
+                    if (isFirstOpen && !isCurrentReady) {
+                        initialTranslationOverlay.visibility = View.VISIBLE
+                    } else {
+                        initialTranslationOverlay.visibility = View.GONE
+                    }
+                    
+                    initTranslation(book, uriString)
+                } else {
+                    loadSpineItem(currentSpineIndex)
+                }
             }
         }
 
@@ -223,6 +256,39 @@ class ReaderActivity : AppCompatActivity() {
         outState.putBoolean("fullscreen", isFullscreenPref)
         outState.putBoolean("ui_visible", isUiOverlayVisible)
         outState.putBoolean("paged_mode", isPagedMode)
+    }
+
+    private fun initTranslation(book: EpubBook, originalUri: String) {
+        translationManager = TranslationManager(this, book, originalUri)
+        
+        // Warm Start: Hide overlay if current chapter is already ready
+        if (translationManager?.isChapterTranslated(currentSpineIndex) == true) {
+            initialTranslationOverlay.visibility = View.GONE
+            loadSpineItem(currentSpineIndex)
+        }
+
+        translationManager?.onTOCReady = { translatedToc ->
+            epubBook = epubBook?.copy(toc = translatedToc)
+            runOnUiThread { updateBookTitles() }
+        }
+
+        translationManager?.onActiveTasksChanged = {
+            runOnUiThread {
+                val tasks = translationManager?.getActiveTasks() ?: emptySet()
+                processingOverlay.visibility = if (tasks.contains(currentSpineIndex)) View.VISIBLE else View.GONE
+            }
+        }
+
+        translationManager?.onChapterReady = { index ->
+            runOnUiThread {
+                if (index == currentSpineIndex) {
+                    initialTranslationOverlay.visibility = View.GONE
+                    loadSpineItem(currentSpineIndex)
+                }
+            }
+        }
+
+        translationManager?.startInitialTranslation(currentSpineIndex)
     }
 
     private fun updateBookTitles() {
@@ -791,6 +857,10 @@ class ReaderActivity : AppCompatActivity() {
                         currentSpineIndex = index
                         updateChapterTitle()
                         saveReadingPosition()
+                        
+                        // Notify Manager
+                        translationManager?.onChapterVisible(index)
+                        
                         webView.evaluateJavascript("applyHighlights('${getHighlightsJson(index)}')", null)
                     }
                 }
@@ -1375,9 +1445,8 @@ class ReaderActivity : AppCompatActivity() {
         if (!url.startsWith("epub://") && !url.contains("#") && !url.endsWith(".xhtml") && !url.endsWith(".html")) return
 
         var cleanPath = url.replace("epub://", "").substringBefore("?")
-        // Remove virtual base paths if they exist
-        if (cleanPath.startsWith("paged/")) cleanPath = cleanPath.substring(6)
-        if (cleanPath.startsWith("seamless/")) cleanPath = cleanPath.substring(9)
+        // Strip mode prefixes if WebView includes them in absolute URLs
+        cleanPath = cleanPath.replace("paged/", "").replace("seamless/", "")
         
         val pathWithoutFragment = cleanPath.substringBefore("#").replace("\\", "/")
         val fragment = if (cleanPath.contains("#")) cleanPath.substringAfter("#") else null

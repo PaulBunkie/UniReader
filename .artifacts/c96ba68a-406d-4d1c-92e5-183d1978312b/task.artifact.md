@@ -1,0 +1,4 @@
+- [x] Fix `LibraryProvider.addBook` bug (update existing instead of ignore)
+- [x] Refine `ReaderActivity` overlay logic (don't block on 2nd opening)
+- [x] Update `TranslationManager` TOC check
+- [x] Verify fix

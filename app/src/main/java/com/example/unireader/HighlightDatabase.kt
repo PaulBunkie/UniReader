@@ -9,7 +9,7 @@ class HighlightDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_N
 
     companion object {
         private const val DATABASE_NAME = "highlights.db"
-        private const val DATABASE_VERSION = 1
+        private const val DATABASE_VERSION = 2
 
         private const val TABLE_HIGHLIGHTS = "highlights"
         private const val COLUMN_ID = "id"
@@ -21,10 +21,14 @@ class HighlightDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_N
         private const val COLUMN_ORIGINAL_TEXT = "original_text"
         private const val COLUMN_REPLACEMENT_TEXT = "replacement_text"
         private const val COLUMN_COLOR = "color"
+
+        private const val TABLE_CHAPTER_STATUS = "chapter_translation_status"
+        private const val COLUMN_CHAPTER_SPINE_INDEX = "spine_index"
+        private const val COLUMN_CHAPTER_IS_TRANSLATED = "is_translated"
     }
 
     override fun onCreate(db: SQLiteDatabase) {
-        val createTable = """
+        val createHighlightsTable = """
             CREATE TABLE $TABLE_HIGHLIGHTS (
                 $COLUMN_ID INTEGER PRIMARY KEY AUTOINCREMENT,
                 $COLUMN_BOOK_URI TEXT,
@@ -37,12 +41,31 @@ class HighlightDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_N
                 $COLUMN_COLOR TEXT
             )
         """.trimIndent()
-        db.execSQL(createTable)
+        db.execSQL(createHighlightsTable)
+
+        val createStatusTable = """
+            CREATE TABLE $TABLE_CHAPTER_STATUS (
+                $COLUMN_BOOK_URI TEXT,
+                $COLUMN_CHAPTER_SPINE_INDEX INTEGER,
+                $COLUMN_CHAPTER_IS_TRANSLATED INTEGER,
+                PRIMARY KEY ($COLUMN_BOOK_URI, $COLUMN_CHAPTER_SPINE_INDEX)
+            )
+        """.trimIndent()
+        db.execSQL(createStatusTable)
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        db.execSQL("DROP TABLE IF EXISTS $TABLE_HIGHLIGHTS")
-        onCreate(db)
+        if (oldVersion < 2) {
+            val createStatusTable = """
+                CREATE TABLE $TABLE_CHAPTER_STATUS (
+                    $COLUMN_BOOK_URI TEXT,
+                    $COLUMN_CHAPTER_SPINE_INDEX INTEGER,
+                    $COLUMN_CHAPTER_IS_TRANSLATED INTEGER,
+                    PRIMARY KEY ($COLUMN_BOOK_URI, $COLUMN_CHAPTER_SPINE_INDEX)
+                )
+            """.trimIndent()
+            db.execSQL(createStatusTable)
+        }
     }
 
     fun saveHighlight(highlight: Highlight): Long {
@@ -126,5 +149,66 @@ class HighlightDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_N
     fun deleteFixes(bookUri: String) {
         val db = writableDatabase
         db.delete(TABLE_HIGHLIGHTS, "$COLUMN_BOOK_URI = ? AND $COLUMN_REPLACEMENT_TEXT IS NOT NULL", arrayOf(bookUri))
+    }
+
+    fun getDictEntries(bookUri: String): List<Highlight> {
+        val highlights = mutableListOf<Highlight>()
+        val db = readableDatabase
+        val cursor = db.query(
+            TABLE_HIGHLIGHTS,
+            null,
+            "$COLUMN_BOOK_URI = ? AND ($COLUMN_REPLACEMENT_TEXT LIKE '[DICT_P]:%' OR $COLUMN_REPLACEMENT_TEXT LIKE '[DICT_C]:%')",
+            arrayOf(bookUri),
+            null, null, null
+        )
+
+        cursor?.use {
+            while (it.moveToNext()) {
+                highlights.add(Highlight(
+                    id = it.getLong(it.getColumnIndexOrThrow(COLUMN_ID)),
+                    bookUri = it.getString(it.getColumnIndexOrThrow(COLUMN_BOOK_URI)),
+                    spineIndex = it.getInt(it.getColumnIndexOrThrow(COLUMN_SPINE_INDEX)),
+                    elementIdx = it.getInt(it.getColumnIndexOrThrow(COLUMN_ELEMENT_IDX)),
+                    startOffset = it.getInt(it.getColumnIndexOrThrow(COLUMN_START_OFFSET)),
+                    endOffset = it.getInt(it.getColumnIndexOrThrow(COLUMN_END_OFFSET)),
+                    originalText = it.getString(it.getColumnIndexOrThrow(COLUMN_ORIGINAL_TEXT)),
+                    replacementText = it.getString(it.getColumnIndexOrThrow(COLUMN_REPLACEMENT_TEXT)),
+                    color = it.getString(it.getColumnIndexOrThrow(COLUMN_COLOR))
+                ))
+            }
+        }
+        return highlights
+    }
+
+    fun markDictEntriesAsCommitted(bookUri: String) {
+        val db = writableDatabase
+        val sql = "UPDATE $TABLE_HIGHLIGHTS SET $COLUMN_REPLACEMENT_TEXT = REPLACE($COLUMN_REPLACEMENT_TEXT, '[DICT_P]:', '[DICT_C]:') WHERE $COLUMN_BOOK_URI = ? AND $COLUMN_REPLACEMENT_TEXT LIKE '[DICT_P]:%'"
+        db.execSQL(sql, arrayOf(bookUri))
+    }
+
+    fun setChapterTranslated(bookUri: String, spineIndex: Int, translated: Boolean) {
+        val db = writableDatabase
+        val values = ContentValues().apply {
+            put(COLUMN_BOOK_URI, bookUri)
+            put(COLUMN_CHAPTER_SPINE_INDEX, spineIndex)
+            put(COLUMN_CHAPTER_IS_TRANSLATED, if (translated) 1 else 0)
+        }
+        db.replace(TABLE_CHAPTER_STATUS, null, values)
+    }
+
+    fun isChapterTranslated(bookUri: String, spineIndex: Int): Boolean {
+        val db = readableDatabase
+        val cursor = db.query(
+            TABLE_CHAPTER_STATUS,
+            arrayOf(COLUMN_CHAPTER_IS_TRANSLATED),
+            "$COLUMN_BOOK_URI = ? AND $COLUMN_CHAPTER_SPINE_INDEX = ?",
+            arrayOf(bookUri, spineIndex.toString()),
+            null, null, null
+        )
+        return cursor?.use {
+            if (it.moveToFirst()) {
+                it.getInt(0) == 1
+            } else false
+        } ?: false
     }
 }

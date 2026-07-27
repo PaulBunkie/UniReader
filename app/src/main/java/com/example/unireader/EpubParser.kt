@@ -110,12 +110,16 @@ class EpubParser(private val context: Context) {
         }
 
         val toc = mutableListOf<TocItem>()
+        var tocPath: String? = null
         
         // Try Nav (EPUB 3) first
         if (navHref != null) {
             val fullNavPath = if (opfDir.isEmpty()) navHref else "$opfDir/$navHref".replace("//", "/")
             val navDir = File(fullNavPath).parent ?: ""
-            parseNav(uri, fullNavPath, navDir)?.let { toc.addAll(it) }
+            parseNav(uri, fullNavPath, navDir)?.let { 
+                toc.addAll(it)
+                tocPath = fullNavPath
+            }
         }
         
         // If Nav failed or empty, try NCX (EPUB 2)
@@ -124,14 +128,17 @@ class EpubParser(private val context: Context) {
             if (ncxHref != null) {
                 val ncxPath = if (opfDir.isEmpty()) ncxHref else "$opfDir/$ncxHref".replace("//", "/")
                 val ncxDir = File(ncxPath).parent ?: ""
-                parseNcx(uri, ncxPath, ncxDir)?.let { toc.addAll(it) }
+                parseNcx(uri, ncxPath, ncxDir)?.let { 
+                    toc.addAll(it)
+                    tocPath = ncxPath
+                }
             }
         }
 
-        Log.d("EpubParser", "Parsed TOC: ${toc.size} items found")
+        Log.d("EpubParser", "Parsed TOC: ${toc.size} items found, path: $tocPath")
 
         return if (spine.isNotEmpty()) {
-            EpubBook(uri, title, author, spine, opfPath, toc)
+            EpubBook(uri, title, author, spine, opfPath, toc, tocPath)
         } else {
             null
         }
