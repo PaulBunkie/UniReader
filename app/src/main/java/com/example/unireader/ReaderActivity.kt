@@ -1,6 +1,7 @@
 package com.example.unireader
 
 import android.annotation.SuppressLint
+import android.graphics.Color
 import android.util.Log
 import android.content.Intent
 import android.net.Uri
@@ -20,7 +21,9 @@ import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.widget.EditText
 import android.widget.ProgressBar
+import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import org.json.JSONObject
@@ -92,11 +95,15 @@ class ReaderActivity : AppCompatActivity() {
     private val fixService = FixService()
     private var lastFixRequestJson: String? = null
     private var lastImprovedText: String? = null
+    
+    private var lastFailedSpineIndex: Int = -1
 
     private var translationManager: TranslationManager? = null
     private var currentBookMetadata: BookMetadata? = null
     private lateinit var processingOverlay: View
     private lateinit var initialTranslationOverlay: View
+    private lateinit var apiLogOverlay: View
+    private lateinit var tvApiLog: TextView
 
     private val saveDocumentLauncher = registerForActivityResult(ActivityResultContracts.CreateDocument("application/epub+zip")) { uri ->
         uri?.let { performSave(it) }
@@ -148,6 +155,38 @@ class ReaderActivity : AppCompatActivity() {
 
         processingOverlay = findViewById(R.id.processingOverlay)
         initialTranslationOverlay = findViewById(R.id.initialTranslationOverlay)
+        apiLogOverlay = findViewById(R.id.apiLogOverlay)
+        tvApiLog = findViewById(R.id.tvApiLog)
+        
+        findViewById<View>(R.id.btnProcessingRetry).setOnClickListener {
+            if (lastFailedSpineIndex != -1) {
+                translationManager?.onChapterVisible(lastFailedSpineIndex)
+                lastFailedSpineIndex = -1
+                updateUiState()
+            }
+        }
+        
+        findViewById<View>(R.id.btnInitialRetry).setOnClickListener {
+            if (lastFailedSpineIndex != -1) {
+                translationManager?.onChapterVisible(lastFailedSpineIndex)
+                lastFailedSpineIndex = -1
+                
+                // Hide error state on big overlay
+                findViewById<ProgressBar>(R.id.pbInitial)?.visibility = View.VISIBLE
+                findViewById<View>(R.id.btnInitialRetry).visibility = View.GONE
+                findViewById<TextView>(R.id.tvInitialStatus)?.text = "Retrying translation..."
+            }
+        }
+
+        DebugLogger.onLogUpdate = { fullLog ->
+            runOnUiThread {
+                tvApiLog.text = fullLog
+                // Auto-scroll to bottom
+                apiLogOverlay.post {
+                    (apiLogOverlay as ScrollView).fullScroll(View.FOCUS_DOWN)
+                }
+            }
+        }
 
         appBarLayout = findViewById(R.id.appBarLayout)
         bottomPanel = findViewById(R.id.bottomPanel)
@@ -223,6 +262,8 @@ class ReaderActivity : AppCompatActivity() {
                 }
                 
                 if (metadata?.isTranslationMode == true) {
+                    initTranslation(book, uriString)
+                    
                     val isFirstOpen = metadata.lastSpineIndex == 0 && metadata.lastElementIndex == -1
                     val isCurrentReady = translationManager?.isChapterTranslated(currentSpineIndex) == true
                     
@@ -231,8 +272,6 @@ class ReaderActivity : AppCompatActivity() {
                     } else {
                         initialTranslationOverlay.visibility = View.GONE
                     }
-                    
-                    initTranslation(book, uriString)
                 } else {
                     loadSpineItem(currentSpineIndex)
                 }
@@ -275,10 +314,55 @@ class ReaderActivity : AppCompatActivity() {
         translationManager?.onActiveTasksChanged = {
             runOnUiThread {
                 val tasks = translationManager?.getActiveTasks() ?: emptySet()
-                processingOverlay.visibility = if (tasks.contains(currentSpineIndex)) View.VISIBLE else View.GONE
+                val queuedCount = translationManager?.getQueuedCount() ?: 0
+                
+                if (tasks.contains(currentSpineIndex)) {
+                    processingOverlay.visibility = View.VISIBLE
+                    findViewById<ProgressBar>(R.id.pbProcessing)?.visibility = View.VISIBLE
+                    findViewById<View>(R.id.btnProcessingRetry).visibility = View.GONE
+                    findViewById<TextView>(R.id.tvProcessingStatus)?.apply {
+                        text = "Translating current chapter..."
+                        setTextColor(Color.WHITE)
+                    }
+                } else if (lastFailedSpineIndex == currentSpineIndex) {
+                    processingOverlay.visibility = View.VISIBLE
+                    findViewById<ProgressBar>(R.id.pbProcessing)?.visibility = View.GONE
+                    findViewById<View>(R.id.btnProcessingRetry).visibility = View.VISIBLE
+                    findViewById<TextView>(R.id.tvProcessingStatus)?.apply {
+                        text = "Translation failed"
+                        setTextColor(Color.RED)
+                    }
+                } else if (queuedCount > 0) {
+                    processingOverlay.visibility = View.VISIBLE
+                    findViewById<ProgressBar>(R.id.pbProcessing)?.visibility = View.VISIBLE
+                    findViewById<View>(R.id.btnProcessingRetry).visibility = View.GONE
+                    findViewById<TextView>(R.id.tvProcessingStatus)?.apply {
+                        text = "Prefetching ($queuedCount in queue)..."
+                        setTextColor(Color.WHITE)
+                    }
+                } else {
+                    processingOverlay.visibility = View.GONE
+                }
             }
         }
 
+        translationManager?.onTaskError = { index, error ->
+            runOnUiThread {
+                DebugLogger.log("MANAGER", "Error on ch $index: $error")
+                if (index == currentSpineIndex) {
+                    lastFailedSpineIndex = index
+                    
+                    // Update big overlay if visible
+                    if (initialTranslationOverlay.visibility == View.VISIBLE) {
+                        findViewById<ProgressBar>(R.id.pbInitial)?.visibility = View.GONE
+                        findViewById<View>(R.id.btnInitialRetry).visibility = View.VISIBLE
+                        findViewById<TextView>(R.id.tvInitialStatus)?.text = "Error: $error"
+                    }
+                    
+                    translationManager?.onActiveTasksChanged?.invoke()
+                }
+            }
+        }
         translationManager?.onChapterReady = { index ->
             runOnUiThread {
                 if (index == currentSpineIndex) {
@@ -335,6 +419,26 @@ class ReaderActivity : AppCompatActivity() {
                     val book = epubBook ?: return@setOnMenuItemClickListener true
                     val fileName = book.uri.toString().substringAfterLast("/").substringBeforeLast(".") + "_improved.epub"
                     saveDocumentLauncher.launch(fileName)
+                    true
+                }
+                popup.menu.add("Мои правки (словарь)").setOnMenuItemClickListener {
+                    val bookUri = epubBook?.uri?.toString() ?: return@setOnMenuItemClickListener true
+                    val dictEntries = highlightDb.getDictEntries(bookUri)
+                    DictionarySheet(dictEntries) { highlight ->
+                        highlightDb.deleteHighlight(highlight.id)
+                        webView.evaluateJavascript("applyHighlights('${getHighlightsJson(highlight.spineIndex)}')", null)
+                    }.show(supportFragmentManager, "dictionary")
+                    true
+                }
+                popup.menu.add("Глоссарий сервера").setOnMenuItemClickListener {
+                    val bookUri = currentBookMetadata?.uri ?: return@setOnMenuItemClickListener true
+                    val latestMetadata = LibraryProvider(this).getBooks().find { it.uri == bookUri }
+                    val glossary = latestMetadata?.serverGlossary ?: "Глоссарий пуст"
+                    ServerGlossarySheet(glossary).show(supportFragmentManager, "server_glossary")
+                    true
+                }
+                popup.menu.add("Показать API Лог").setOnMenuItemClickListener {
+                    apiLogOverlay.visibility = if (apiLogOverlay.visibility == View.VISIBLE) View.GONE else View.VISIBLE
                     true
                 }
                 popup.show()
@@ -522,6 +626,12 @@ class ReaderActivity : AppCompatActivity() {
         val bgColor = if (isDarkMode) "#000000" else "#FFFFFF"
         val textColor = if (isDarkMode) "#E0E0E0" else "#000000"
         
+        // Theme specific colors for UI elements
+        val menuBg = if (isDarkMode) "#1976D2" else "#2196F3"
+        val tooltipBg = if (isDarkMode) "#2C2C2C" else "#FFFFFF"
+        val tooltipText = if (isDarkMode) "#E0E0E0" else "#333333"
+        val tooltipBorder = if (isDarkMode) "#444444" else "#CCCCCC"
+        
         webView.setBackgroundColor(if (isDarkMode) 0xFF000000.toInt() else 0xFFFFFFFF.toInt())
         findViewById<CoordinatorLayout>(R.id.readerRoot)?.setBackgroundColor(if (isDarkMode) 0xFF000000.toInt() else 0xFFFFFFFF.toInt())
 
@@ -551,24 +661,65 @@ class ReaderActivity : AppCompatActivity() {
             * { max-width: 100% !important; box-sizing: border-box !important; }
             img { display: block; max-width: 100% !important; max-height: 80vh !important; margin: 10px auto !important; object-fit: contain; }
             
+            /* Highlights and UI Elements */
+            #uni-selection-menu {
+                position: fixed;
+                background: $menuBg !important;
+                border: none !important;
+                border-radius: 20px !important;
+                display: none;
+                z-index: 2147483647 !important;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.4) !important;
+                flex-direction: row;
+                overflow: hidden;
+            }
+            .uni-menu-btn {
+                background: none !important;
+                border: none !important;
+                color: white !important;
+                padding: 10px 16px !important;
+                font-size: 14px !important;
+                font-weight: bold !important;
+                cursor: pointer !important;
+            }
+            .uni-menu-btn:not(:last-child) {
+                border-right: 1px solid rgba(255,255,255,0.3) !important;
+            }
+            
+            #uni-fix-tooltip {
+                position: fixed;
+                background: $tooltipBg !important;
+                color: $tooltipText !important;
+                border: 1px solid $tooltipBorder !important;
+                border-radius: 8px !important;
+                padding: 12px !important;
+                font-size: 14px !important;
+                z-index: 2147483647 !important;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.3) !important;
+                max-width: 80% !important;
+                line-height: 1.4 !important;
+                display: none;
+            }
+            #uni-fix-tooltip b {
+                color: ${if (isDarkMode) "#81C784" else "#2E7D32"};
+                display: block;
+                margin-bottom: 4px;
+            }
+            
             mark.uni-highlight {
-                background-color: #ffeb3b !important;
-                color: #000 !important;
+                background-color: ${if (isDarkMode) "#f57f17" else "#ffeb3b"} !important;
+                color: ${if (isDarkMode) "#ffffff" else "#000000"} !important;
                 border-radius: 2px;
             }
             mark.uni-fix {
-                background-color: #C8E6C9 !important;
-                color: #1B5E20 !important;
+                background-color: ${if (isDarkMode) "#2E7D32" else "#C8E6C9"} !important;
+                color: ${if (isDarkMode) "#E8F5E9" else "#1B5E20"} !important;
                 border-radius: 2px;
-                cursor: help;
             }
-            [data-theme="dark"] mark.uni-highlight {
-                background-color: #f57f17 !important;
-                color: #fff !important;
-            }
-            [data-theme="dark"] mark.uni-fix {
-                background-color: #2E7D32 !important;
-                color: #E8F5E9 !important;
+            mark.uni-dict {
+                border-bottom: 2px dashed #FF9800 !important;
+                background-color: ${if (isDarkMode) "rgba(255, 152, 0, 0.2)" else "rgba(255, 152, 0, 0.15)"} !important;
+                color: inherit !important;
             }
         """.trimIndent()
 
@@ -950,6 +1101,15 @@ class ReaderActivity : AppCompatActivity() {
                     showFixOverlay(json)
                 }
             }
+
+            @Keep
+            @JavascriptInterface
+            @Suppress("unused")
+            fun addToDictionary(json: String) {
+                runOnUiThread {
+                    showDictDialog(json)
+                }
+            }
         }, "AndroidReader",)
 
         webView.webViewClient = object : WebViewClient() {
@@ -1027,61 +1187,10 @@ class ReaderActivity : AppCompatActivity() {
             (function() {
                 console.log('UniReader: Injecting script');
                 
-                // Add CSS for the floating highlight button if not already there
+                // Styles are now injected via applyCurrentSettings/reader-style
                 if (!document.getElementById('uni-highlight-style')) {
                     var style = document.createElement('style');
                     style.id = 'uni-highlight-style';
-                    style.innerHTML = `
-                        #uni-selection-menu {
-                            position: fixed;
-                            background: #2196F3 !important;
-                            border: none !important;
-                            border-radius: 20px !important;
-                            display: none;
-                            z-index: 2147483647 !important;
-                            box-shadow: 0 4px 12px rgba(0,0,0,0.4) !important;
-                            overflow: hidden;
-                            flex-direction: row;
-                            font-family: sans-serif !important;
-                        }
-                        .uni-menu-btn {
-                            background: none !important;
-                            border: none !important;
-                            color: white !important;
-                            padding: 10px 20px !important;
-                            font-size: 14px !important;
-                            font-weight: bold !important;
-                            cursor: pointer !important;
-                            transition: background 0.2s;
-                            white-space: nowrap;
-                        }
-                        .uni-menu-btn:active {
-                            background: rgba(0,0,0,0.1) !important;
-                        }
-                        .uni-menu-btn:not(:last-child) {
-                            border-right: 1px solid rgba(255,255,255,0.3) !important;
-                        }
-                        #uni-fix-tooltip {
-                            position: fixed;
-                            background: #fdfdfd !important;
-                            color: #333 !important;
-                            border: 1px solid #ccc !important;
-                            border-radius: 8px !important;
-                            padding: 12px !important;
-                            font-size: 14px !important;
-                            z-index: 2147483647 !important;
-                            box-shadow: 0 4px 12px rgba(0,0,0,0.2) !important;
-                            max-width: 80% !important;
-                            line-height: 1.4 !important;
-                            display: none;
-                            font-family: sans-serif !important;
-                        }
-                        #uni-fix-tooltip b {
-                            color: #2E7D32;
-                            display: block;
-                            margin-bottom: 4px;
-                        }
-                    `;
                     document.head.appendChild(style);
                 }
                 
@@ -1101,6 +1210,12 @@ class ReaderActivity : AppCompatActivity() {
                     btnFix.className = 'uni-menu-btn';
                     btnFix.innerText = 'Исправить';
                     menu.appendChild(btnFix);
+                    
+                    var btnDict = document.createElement('button');
+                    btnDict.id = 'uni-dict-btn';
+                    btnDict.className = 'uni-menu-btn';
+                    btnDict.innerText = 'В словарь';
+                    menu.appendChild(btnDict);
                     
                     document.body.appendChild(menu);
                     
@@ -1176,6 +1291,41 @@ class ReaderActivity : AppCompatActivity() {
                                 };
                                 console.log('UniReader: Sending fix data with positions', data);
                                 AndroidReader.fixText(JSON.stringify(data));
+                            }
+                            window.getSelection().removeAllRanges();
+                        }
+                        menu.style.display = 'none';
+                    };
+                    
+                    btnDict.onclick = function(e) {
+                        console.log('UniReader: Dict clicked');
+                        var sel = window.getSelection();
+                        var text = sel.toString();
+                        if (text) {
+                            var range = sel.getRangeAt(0);
+                            var container = range.commonAncestorContainer;
+                            if (container.nodeType === 3) container = container.parentNode;
+                            var el = container.closest('[data-idx]');
+                            if (el) {
+                                var idx = parseInt(el.getAttribute('data-idx'));
+                                var preRange = document.createRange();
+                                preRange.selectNodeContents(el);
+                                preRange.setEnd(range.startContainer, range.startOffset);
+                                var start = preRange.toString().length;
+                                var end = start + text.length;
+                                
+                                var sectionEl = el.closest('section');
+                                var spineIndex = sectionEl ? parseInt(sectionEl.getAttribute('data-index')) : -1;
+
+                                var data = {
+                                    text: text,
+                                    spineIndex: spineIndex,
+                                    elementIdx: idx,
+                                    startOffset: start,
+                                    endOffset: end
+                                };
+                                console.log('UniReader: Sending dict data', data);
+                                AndroidReader.addToDictionary(JSON.stringify(data));
                             }
                             window.getSelection().removeAllRanges();
                         }
@@ -1266,18 +1416,21 @@ class ReaderActivity : AppCompatActivity() {
                         
                         var btnHighlight = document.getElementById('uni-highlight-btn');
                         var btnFix = document.getElementById('uni-fix-btn');
-                        if (!btnHighlight || !btnFix) return;
+                        var btnDict = document.getElementById('uni-dict-btn');
+                        if (!btnHighlight || !btnFix || !btnDict) return;
 
-                        var existingMark = container.closest('.uni-highlight, .uni-fix');
+                        var existingMark = container.closest('.uni-highlight, .uni-fix, .uni-dict');
                         if (existingMark) {
                             btnHighlight.innerText = 'Удалить';
                             btnHighlight.setAttribute('data-mode', 'delete');
                             btnHighlight.setAttribute('data-target-id', existingMark.getAttribute('data-id'));
                             btnFix.style.display = 'none';
+                            btnDict.style.display = 'none';
                         } else {
                             btnHighlight.innerText = 'Пометить';
                             btnHighlight.setAttribute('data-mode', 'save');
                             btnFix.style.display = 'block';
+                            btnDict.style.display = 'block';
                         }
 
                         var rect = range.getBoundingClientRect();
@@ -1340,7 +1493,7 @@ class ReaderActivity : AppCompatActivity() {
                     if (!section) return;
 
                     // Clear existing highlights AND fixes ONLY within this section
-                    section.querySelectorAll('.uni-highlight, .uni-fix').forEach(m => {
+                    section.querySelectorAll('.uni-highlight, .uni-fix, .uni-dict').forEach(m => {
                         var p = m.parentNode;
                         while(m.firstChild) p.insertBefore(m.firstChild, m);
                         p.removeChild(m);
@@ -1376,11 +1529,17 @@ class ReaderActivity : AppCompatActivity() {
                             range.setEnd(endNode, endOffset);
                             
                             var mark = document.createElement('mark');
-                            var isFix = h.replacementText && h.replacementText.length > 0;
-                            mark.setAttribute('class', isFix ? 'uni-fix' : 'uni-highlight');
-                            if (!isFix) mark.style.backgroundColor = h.color;
+                            var isDict = h.replacementText && h.replacementText.indexOf('[DICT_P]:') === 0;
+                            var isFix = h.replacementText && h.replacementText.length > 0 && !isDict;
+                            
+                            var className = 'uni-highlight';
+                            if (isDict) className = 'uni-dict';
+                            else if (isFix) className = 'uni-fix';
+                            
+                            mark.setAttribute('class', className);
+                            if (className === 'uni-highlight') mark.style.backgroundColor = h.color;
                             mark.setAttribute('data-id', h.id);
-                            if (isFix) mark.setAttribute('data-replacement', h.replacementText);
+                            if (isFix || isDict) mark.setAttribute('data-replacement', h.replacementText);
                             
                             try {
                                 range.surroundContents(mark);
@@ -1395,14 +1554,17 @@ class ReaderActivity : AppCompatActivity() {
                 };
                 
                 document.body.addEventListener('click', function(e) {
-                    var fix = e.target.closest('.uni-fix');
+                    var fix = e.target.closest('.uni-fix, .uni-dict');
                     if (fix) {
                         e.preventDefault();
                         e.stopPropagation();
                         var replacement = fix.getAttribute('data-replacement');
                         if (replacement) {
+                            var isDict = replacement.indexOf('[DICT_P]:') === 0;
+                            var cleanText = isDict ? replacement.substring(9) : replacement;
+                            
                             var rect = fix.getBoundingClientRect();
-                            tooltip.innerHTML = '<b>Исправленный вариант:</b>' + replacement;
+                            tooltip.innerHTML = (isDict ? '<b>Словарь:</b>' : '<b>Исправленный вариант:</b>') + cleanText;
                             tooltip.style.display = 'block';
                             
                             var tWidth = tooltip.offsetWidth;
@@ -2248,6 +2410,43 @@ class ReaderActivity : AppCompatActivity() {
             })();
         """.trimIndent()) {
             if (it == "\"prev\"") loadPrevSpineItem()
+        }
+    }
+
+    private fun showDictDialog(json: String) {
+        try {
+            val obj = JSONObject(json)
+            val text = obj.getString("text")
+            
+            val input = EditText(this).apply {
+                hint = "Перевод для '$text'"
+                setPadding(48, 32, 48, 32)
+            }
+            
+            com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
+                .setTitle("Добавить в словарь")
+                .setView(input)
+                .setPositiveButton("Сохранить") { _, _ ->
+                    val translation = input.text.toString().trim()
+                    if (translation.isNotEmpty()) {
+                        val highlight = Highlight(
+                            bookUri = epubBook?.uri.toString(),
+                            spineIndex = obj.getInt("spineIndex"),
+                            elementIdx = obj.getInt("elementIdx"),
+                            startOffset = obj.getInt("startOffset"),
+                            endOffset = obj.getInt("endOffset"),
+                            originalText = text,
+                            replacementText = "[DICT_P]:$translation"
+                        )
+                        highlightDb.saveHighlight(highlight)
+                        webView.evaluateJavascript("applyHighlights('${getHighlightsJson(highlight.spineIndex)}')", null)
+                    }
+                }
+                .setNegativeButton("Отмена", null)
+                .show()
+                
+        } catch (e: Exception) {
+            Log.e("Reader", "Error showing dict dialog", e)
         }
     }
 

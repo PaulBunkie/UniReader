@@ -25,7 +25,7 @@ class LibraryProvider(private val context: Context) {
                 lastCharOffset = obj.optInt("lastCharOffset", -1),
                 isTranslationMode = obj.optBoolean("isTranslationMode", false),
                 isTocTranslated = obj.optBoolean("isTocTranslated", false),
-                translationGuidelines = obj.optString("translationGuidelines", null),
+                serverGlossary = obj.optString("serverGlossary", null) ?: obj.optString("translationGuidelines", null),
                 localCopyUri = obj.optString("localCopyUri", null),
                 totalSpineItems = obj.optInt("totalSpineItems", 0)
             ))
@@ -99,7 +99,7 @@ class LibraryProvider(private val context: Context) {
             obj.put("lastAnchor", book.lastAnchor)
             obj.put("isTranslationMode", book.isTranslationMode)
             obj.put("isTocTranslated", book.isTocTranslated)
-            obj.put("translationGuidelines", book.translationGuidelines)
+            obj.put("serverGlossary", book.serverGlossary)
             obj.put("localCopyUri", book.localCopyUri)
             obj.put("totalSpineItems", book.totalSpineItems)
             array.put(obj)

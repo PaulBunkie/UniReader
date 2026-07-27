@@ -163,7 +163,7 @@ class HighlightDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_N
         val cursor = db.query(
             TABLE_HIGHLIGHTS,
             null,
-            "$COLUMN_BOOK_URI = ? AND ($COLUMN_REPLACEMENT_TEXT LIKE '[DICT_P]:%' OR $COLUMN_REPLACEMENT_TEXT LIKE '[DICT_C]:%')",
+            "$COLUMN_BOOK_URI = ? AND $COLUMN_REPLACEMENT_TEXT LIKE '[DICT_P]:%'",
             arrayOf(bookUri),
             null, null, null
         )
@@ -188,8 +188,7 @@ class HighlightDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_N
 
     fun markDictEntriesAsCommitted(bookUri: String) {
         val db = writableDatabase
-        val sql = "UPDATE $TABLE_HIGHLIGHTS SET $COLUMN_REPLACEMENT_TEXT = REPLACE($COLUMN_REPLACEMENT_TEXT, '[DICT_P]:', '[DICT_C]:') WHERE $COLUMN_BOOK_URI = ? AND $COLUMN_REPLACEMENT_TEXT LIKE '[DICT_P]:%'"
-        db.execSQL(sql, arrayOf(bookUri))
+        db.delete(TABLE_HIGHLIGHTS, "$COLUMN_BOOK_URI = ? AND $COLUMN_REPLACEMENT_TEXT LIKE '[DICT_P]:%'", arrayOf(bookUri))
     }
 
     fun setChapterTranslated(bookUri: String, spineIndex: Int, translated: Boolean) {

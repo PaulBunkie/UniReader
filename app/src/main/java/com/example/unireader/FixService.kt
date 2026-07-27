@@ -10,7 +10,7 @@ import java.io.IOException
 
 class FixService {
     private val client = OkHttpClient()
-    private val baseUrl = "http://10.0.2.2:8080/api"
+    private val baseUrl = "http://136.109.52.87:8080/api"
     private val jsonMediaType = "application/json; charset=utf-8".toMediaType()
 
     suspend fun improveText(
@@ -37,14 +37,17 @@ class FixService {
                 .post(postBody.toRequestBody(jsonMediaType))
                 .build()
 
+            DebugLogger.log("FIX", "REQ: ${text.take(50)}...")
             val postResponse = client.newCall(postRequest).execute()
             if (!postResponse.isSuccessful) {
+                DebugLogger.log("FIX", "ERR: ${postResponse.code}")
                 onError("Ошибка создания задачи: ${postResponse.code}")
                 return
             }
 
             val taskData = JSONObject(postResponse.body?.string() ?: "")
             val taskId = taskData.getString("task_id")
+            DebugLogger.log("FIX", "TASK: $taskId")
 
             // 2. Polling GET /api/improve/<task_id>
             while (true) {
@@ -68,10 +71,12 @@ class FixService {
 
                 when (status) {
                     "completed" -> {
+                        DebugLogger.log("FIX", "OK: ${statusData.getString("result").take(50)}...")
                         onSuccess(statusData.getString("result"), statusData.optString("model"))
                         return
                     }
                     "error" -> {
+                        DebugLogger.log("FIX", "ERR: ${statusData.optString("error")}")
                         onError(statusData.optString("error", "Неизвестная ошибка модели"))
                         return
                     }
