@@ -15,6 +15,7 @@ import android.view.Menu
 import android.view.MenuItem
 import android.content.Intent
 import android.net.Uri
+import android.provider.OpenableColumns
 import androidx.activity.result.contract.ActivityResultContracts
 import com.example.unireader.databinding.ActivityMainBinding
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
@@ -61,18 +62,51 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        val finalTitle = if (!epubBook.title.isNullOrBlank()) {
+            epubBook.title
+        } else {
+            getFileNameFromUri(uri) ?: "Unknown Title"
+        }
+
         libraryProvider.addBook(BookMetadata(
             uri = sourceUriString,
-            title = epubBook.title ?: "Unknown Title",
+            title = finalTitle,
             author = epubBook.author ?: "Unknown Author",
             isTranslationMode = isTranslation,
-            localCopyUri = localCopyUriString
+            localCopyUri = localCopyUriString,
+            totalSpineItems = epubBook.spine.size
         ))
 
         val intent = Intent(this, ReaderActivity::class.java).apply {
             putExtra("epub_uri", sourceUriString)
         }
         startActivity(intent)
+    }
+
+    private fun getFileNameFromUri(uri: Uri): String? {
+        var name: String? = null
+        if (uri.scheme == "content") {
+            contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                    if (nameIndex != -1) {
+                        name = cursor.getString(nameIndex)
+                    }
+                }
+            }
+        }
+        if (name == null) {
+            name = uri.path
+            val cut = name?.lastIndexOf('/')
+            if (cut != null && cut != -1) {
+                name = name?.substring(cut + 1)
+            }
+        }
+        // Remove extension if possible
+        if (name != null && name!!.contains(".")) {
+            name = name!!.substringBeforeLast(".")
+        }
+        return name
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {

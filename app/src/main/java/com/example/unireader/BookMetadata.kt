@@ -11,5 +11,6 @@ data class BookMetadata(
     var isTranslationMode: Boolean = false,
     var isTocTranslated: Boolean = false,
     var translationGuidelines: String? = null,
-    var localCopyUri: String? = null
+    var localCopyUri: String? = null,
+    var totalSpineItems: Int = 0
 )

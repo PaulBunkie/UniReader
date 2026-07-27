@@ -5,10 +5,12 @@ import androidx.fragment.app.Fragment
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import androidx.recyclerview.widget.DividerItemDecoration
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.example.unireader.databinding.FragmentFirstBinding
 import android.content.Intent
 import android.net.Uri
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 
 /**
  * A simple [Fragment] subclass as the default destination in the navigation.
@@ -33,15 +35,36 @@ class FirstFragment : Fragment() {
         super.onViewCreated(view, savedInstanceState)
 
         libraryProvider = LibraryProvider(requireContext())
-        adapter = BooksAdapter(libraryProvider.getBooks()) { book ->
-            val intent = Intent(requireContext(), ReaderActivity::class.java).apply {
-                putExtra("epub_uri", book.uri)
+        adapter = BooksAdapter(
+            libraryProvider.getBooks(),
+            onClick = { book ->
+                val intent = Intent(requireContext(), ReaderActivity::class.java).apply {
+                    putExtra("epub_uri", book.uri)
+                }
+                startActivity(intent)
+            },
+            onLongClick = { book ->
+                showDeleteConfirmation(book)
             }
-            startActivity(intent)
-        }
+        )
 
         binding.recyclerView.layoutManager = LinearLayoutManager(requireContext())
+        binding.recyclerView.addItemDecoration(
+            DividerItemDecoration(requireContext(), DividerItemDecoration.VERTICAL)
+        )
         binding.recyclerView.adapter = adapter
+    }
+
+    private fun showDeleteConfirmation(book: BookMetadata) {
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle("Delete Book")
+            .setMessage("Are you sure you want to delete '${book.title}' and all its data (progress, highlights, translations)? The original file will not be affected.")
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Delete") { _, _ ->
+                libraryProvider.deleteBook(book)
+                adapter.updateBooks(libraryProvider.getBooks())
+            }
+            .show()
     }
 
     override fun onResume() {

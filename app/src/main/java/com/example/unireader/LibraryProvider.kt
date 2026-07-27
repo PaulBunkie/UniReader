@@ -1,8 +1,10 @@
 package com.example.unireader
 
 import android.content.Context
+import android.net.Uri
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.File
 
 class LibraryProvider(private val context: Context) {
     private val prefs = context.getSharedPreferences("library_prefs", Context.MODE_PRIVATE)
@@ -24,7 +26,8 @@ class LibraryProvider(private val context: Context) {
                 isTranslationMode = obj.optBoolean("isTranslationMode", false),
                 isTocTranslated = obj.optBoolean("isTocTranslated", false),
                 translationGuidelines = obj.optString("translationGuidelines", null),
-                localCopyUri = obj.optString("localCopyUri", null)
+                localCopyUri = obj.optString("localCopyUri", null),
+                totalSpineItems = obj.optInt("totalSpineItems", 0)
             ))
         }
         return list
@@ -58,6 +61,31 @@ class LibraryProvider(private val context: Context) {
         }
     }
 
+    fun deleteBook(book: BookMetadata) {
+        val books = getBooks()
+        if (books.removeAll { it.uri == book.uri }) {
+            saveBooks(books)
+            
+            // Delete local copy if exists
+            book.localCopyUri?.let { uriString ->
+                try {
+                    val uri = Uri.parse(uriString)
+                    if (uri.scheme == "file") {
+                        val file = File(uri.path ?: "")
+                        if (file.exists()) {
+                            file.delete()
+                        }
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+            
+            // Delete DB records
+            HighlightDatabase(context).deleteBookData(book.uri)
+        }
+    }
+
     private fun saveBooks(books: List<BookMetadata>) {
         val array = JSONArray()
         books.forEach { book ->
@@ -73,6 +101,7 @@ class LibraryProvider(private val context: Context) {
             obj.put("isTocTranslated", book.isTocTranslated)
             obj.put("translationGuidelines", book.translationGuidelines)
             obj.put("localCopyUri", book.localCopyUri)
+            obj.put("totalSpineItems", book.totalSpineItems)
             array.put(obj)
         }
         prefs.edit().putString("books", array.toString()).apply()

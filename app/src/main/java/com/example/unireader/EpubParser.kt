@@ -70,7 +70,7 @@ class EpubParser(private val context: Context) {
                     while (eventType != XmlPullParser.END_DOCUMENT) {
                         when (eventType) {
                             XmlPullParser.START_TAG -> {
-                                currentTag = parser.name
+                                currentTag = parser.name.lowercase()
                                 when (currentTag) {
                                     "item" -> {
                                         val id = parser.getAttributeValue(null, "id")
@@ -96,8 +96,13 @@ class EpubParser(private val context: Context) {
                                 }
                             }
                             XmlPullParser.TEXT -> {
-                                if (currentTag == "dc:title") title = parser.text
-                                if (currentTag == "dc:creator") author = parser.text
+                                val text = parser.text?.trim()
+                                if (!text.isNullOrEmpty()) {
+                                    when (currentTag) {
+                                        "dc:title", "title" -> title = text
+                                        "dc:creator", "creator", "dc:author", "author" -> author = text
+                                    }
+                                }
                             }
                             XmlPullParser.END_TAG -> currentTag = null
                         }

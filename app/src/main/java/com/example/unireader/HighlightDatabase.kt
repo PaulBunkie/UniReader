@@ -151,6 +151,12 @@ class HighlightDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_N
         db.delete(TABLE_HIGHLIGHTS, "$COLUMN_BOOK_URI = ? AND $COLUMN_REPLACEMENT_TEXT IS NOT NULL", arrayOf(bookUri))
     }
 
+    fun deleteBookData(bookUri: String) {
+        val db = writableDatabase
+        db.delete(TABLE_HIGHLIGHTS, "$COLUMN_BOOK_URI = ?", arrayOf(bookUri))
+        db.delete(TABLE_CHAPTER_STATUS, "$COLUMN_BOOK_URI = ?", arrayOf(bookUri))
+    }
+
     fun getDictEntries(bookUri: String): List<Highlight> {
         val highlights = mutableListOf<Highlight>()
         val db = readableDatabase

@@ -1,0 +1,6 @@
+- [x] Update `BookMetadata` and `LibraryProvider` to include `totalSpineItems`
+- [x] Improve `EpubParser` metadata extraction
+- [x] Update `MainActivity` with better title fallback and chapter count
+- [x] Add progress display to `item_book.xml`
+- [x] Bind progress in `BooksAdapter`
+- [x] Verify functionality
