@@ -10,7 +10,7 @@
         android:layout_height="wrap_content"
         android:ellipsize="end"
         android:singleLine="true"
-        android:text="Book Title"
+        android:text="@string/book_title_placeholder"
         android:textColor="?attr/colorOnSurface"
         android:textSize="14sp" />
 
@@ -20,7 +20,7 @@
         android:layout_height="wrap_content"
         android:ellipsize="end"
         android:singleLine="true"
-        android:text="Chapter Name"
+        android:text="@string/chapter_name_placeholder"
         android:textColor="?attr/colorOnSurface"
         android:textSize="16sp"
         android:textStyle="bold" />

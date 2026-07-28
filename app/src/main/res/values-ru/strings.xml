@@ -1,0 +1,113 @@
+<resources>
+    <string name="app_name">REAiDO</string>
+    <string name="action_settings">Настройки</string>
+    <!-- Strings used for fragments for navigation -->
+    <string name="first_fragment_label">Первый фрагмент</string>
+    <string name="second_fragment_label">Второй фрагмент</string>
+    <string name="next">Далее</string>
+    <string name="previous">Назад</string>
+
+    <string name="tab_general">Общие</string>
+    <string name="tab_styles">Стили</string>
+    <string name="tab_colors">Цвета</string>
+    <string name="toc_title">Содержание</string>
+    <string name="menu_appearance">Внешний вид</string>
+    <string name="menu_retranslate">Перевести главу заново</string>
+    <string name="menu_save_updates">Сохранить изменения</string>
+    <string name="menu_api_log">Лог API</string>
+    <string name="menu_switch_to_local">Переключить на LOCAL API</string>
+    <string name="menu_switch_to_prod">Переключить на PROD API</string>
+    <string name="selection_highlight">Пометить</string>
+    <string name="selection_fix">Исправить</string>
+    <string name="selection_dict">В словарь</string>
+    <string name="selection_delete">Удалить</string>
+    <string name="progress_zero">0%%</string>
+    <string name="progress_format">%1$d/%2$d</string>
+    <string name="brightness_format">Яркость: %d%%</string>
+
+    <!-- Reader Activity -->
+    <string name="translating">Перевод…</string>
+    <string name="retrying_translation">Повторная попытка перевода…</string>
+    <string name="translating_current_chapter">Перевод текущей главы…</string>
+    <string name="translation_failed">Ошибка перевода</string>
+    <string name="prefetching_queue">Предзагрузка (%d в очереди)…</string>
+    <string name="reading_progress_format">Глава %1$d/%2$d · Стр %3$d/%4$d · %5$d%%</string>
+    <string name="retry">Повторить</string>
+    <string name="fix_text">Исправление</string>
+    <string name="refresh">Обновить</string>
+    <string name="save">Сохранить</string>
+    <string name="preparing_translation">Подготовка перевода…\nПожалуйста, подождите</string>
+    <string name="edit_note">Редактировать заметку</string>
+    <string name="edit_glossary_item">Редактировать глоссарий: %s</string>
+    <string name="gender_hint">Род (m/f/n)</string>
+    <string name="original_term_hint">Оригинальный термин</string>
+    <string name="translation_for">Перевод для «%s»</string>
+    <string name="creating_task">Создание задачи…</string>
+    <string name="error_prefix">Ошибка: %s</string>
+    <string name="error_disk_write">Ошибка записи на диск</string>
+    <string name="error_server">Ошибка сервера</string>
+    <string name="error_toc_request_failed">Ошибка запроса содержания: %d</string>
+    <string name="error_api_request_failed">Ошибка API запроса: %d</string>
+    <string name="error_polling_failed">Ошибка ожидания результата: %d</string>
+    <string name="updated">Обновлено</string>
+    <string name="add_to_glossary">Добавить в глоссарий</string>
+    <string name="term_added">Термин добавлен</string>
+    <string name="add_to_dictionary">Добавить в словарь</string>
+    <string name="error_saving">Ошибка сохранения</string>
+    <string name="no_pending_fixes">Нет исправлений для сохранения</string>
+    <string name="saving_improved_copy">Сохранение улучшенной копии…</string>
+    <string name="saved_successfully">Успешно сохранено</string>
+    <string name="error_saving_file">Ошибка сохранения файла</string>
+    <string name="api_switched_to">API переключен на %s</string>
+
+    <!-- Library / Main Activity -->
+    <string name="delete_book_title">Удалить книгу</string>
+    <string name="delete_book_message">Вы уверены, что хотите удалить «%s» и все связанные данные (прогресс, выделения, переводы)? Исходный файл затронут не будет.</string>
+    <string name="cancel">Отмена</string>
+    <string name="delete">Удалить</string>
+    <string name="select_reading_mode">Выберите режим чтения</string>
+    <string name="enable_ai_translation">Включить AI перевод?</string>
+    <string name="original_mode">Оригинал</string>
+    <string name="translate_and_read">Перевести и читать</string>
+
+    <!-- Dictionary / Glossary -->
+    <string name="my_notes">Мои заметки</string>
+    <string name="my_notes_count">Мои заметки (%d)</string>
+    <string name="glossary">Глоссарий</string>
+    <string name="original_text">Оригинал</string>
+    <string name="translation_text">Перевод</string>
+    <string name="attr">Атр</string>
+
+    <!-- Settings -->
+    <string name="paged_mode">Постраничный режим</string>
+    <string name="fullscreen">Полноэкранный режим</string>
+    <string name="screen_margins">Отступы экрана (dp)</string>
+    <string name="left">Слева</string>
+    <string name="right">Справа</string>
+    <string name="top">Сверху</string>
+    <string name="bottom">Снизу</string>
+    <string name="font_size">Размер шрифта</string>
+    <string name="paragraph_spacing">Интервал абзаца</string>
+    <string name="line_height">Высота строки</string>
+    <string name="first_line_indent">Отступ первой строки</string>
+    <string name="column_gap">Межколоночный интервал</string>
+    <string name="dark_mode">Темная тема</string>
+
+    <!-- Placeholders / Misc -->
+    <string name="appearance_settings_placeholder">Заглушка настроек внешнего вида</string>
+    <string name="settings_placeholder_desc">Это полупрозрачная заглушка для настроек.</string>
+    <string name="book_title_placeholder">Название книги</string>
+    <string name="chapter_name_placeholder">Название главы</string>
+    <string name="unknown_title">Неизвестное название</string>
+    <string name="unknown_author">Неизвестный автор</string>
+    <string name="unknown_book">Неизвестная книга</string>
+    <string name="unknown_server_error">Неизвестная ошибка сервера</string>
+
+    <!-- Service errors -->
+    <string name="error_creating_task">Ошибка создания задачи: %d</string>
+    <string name="task_not_found">Задача не найдена (404)</string>
+    <string name="server_error">Ошибка сервера: %d</string>
+    <string name="unknown_model_error">Неизвестная ошибка модели</string>
+    <string name="processing">Обработка…</string>
+    <string name="network_error">Сетевая ошибка: %s</string>
+</resources>

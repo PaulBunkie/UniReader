@@ -57,10 +57,10 @@ class FirstFragment : Fragment() {
 
     private fun showDeleteConfirmation(book: BookMetadata) {
         MaterialAlertDialogBuilder(requireContext())
-            .setTitle("Delete Book")
-            .setMessage("Are you sure you want to delete '${book.title}' and all its data (progress, highlights, translations)? The original file will not be affected.")
-            .setNegativeButton("Cancel", null)
-            .setPositiveButton("Delete") { _, _ ->
+            .setTitle(R.string.delete_book_title)
+            .setMessage(getString(R.string.delete_book_message, book.title))
+            .setNegativeButton(R.string.cancel, null)
+            .setPositiveButton(R.string.delete) { _, _ ->
                 libraryProvider.deleteBook(book)
                 adapter.updateBooks(libraryProvider.getBooks())
             }

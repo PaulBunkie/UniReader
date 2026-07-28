@@ -1,8 +1,7 @@
-- [ ] Добавить метод удаления в `HighlightDatabase.kt`
-- [ ] Обновить `getHighlightsJson` в `ReaderActivity.kt` (добавить ID)
-- [ ] Добавить `deleteHighlight` в `JavascriptInterface` в `ReaderActivity.kt`
-- [ ] Обновить `injectIndexingScript` в `ReaderActivity.kt`:
-    - [ ] Изменить текст кнопок ("Пометить", "Снять пометку")
-    - [ ] Реализовать логику переключения режима кнопки (сохранение/удаление)
-    - [ ] Добавить ID в атрибуты тега `mark` при отрисовке
-- [ ] Проверить работу (сборка не требуется, так как это JS и логика БД)
+- [x] Extract strings from layout files to `strings.xml`
+- [x] Extract strings from Kotlin files to `strings.xml`
+- [x] Translate all strings in default `strings.xml` to English (standardization)
+- [x] Create `res/values-ru/strings.xml` with Russian translations
+- [x] Update layout files to use `@string/...`
+- [x] Update Kotlin files to use `getString(R.string....)`
+- [x] Verify build and localization switching

@@ -1,5 +1,6 @@
 package com.example.unireader
 
+import android.content.Context
 import kotlinx.coroutines.delay
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -8,13 +9,13 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import java.io.IOException
 
-class FixService(private val baseUrl: String) {
+class FixService(private val context: Context, private val baseUrl: String) {
     private val client = OkHttpClient()
     private val jsonMediaType = "application/json; charset=utf-8".toMediaType()
 
     suspend fun improveText(
         text: String,
-        context: String? = null,
+        contextText: String? = null,
         hotpoints: List<String>? = null,
         onStatusUpdate: (String) -> Unit,
         onSuccess: (String, String?) -> Unit,
@@ -23,7 +24,7 @@ class FixService(private val baseUrl: String) {
         try {
             // 1. POST /api/improve
             val postJson = JSONObject().put("text", text)
-            if (!context.isNullOrEmpty()) postJson.put("context", context)
+            if (!contextText.isNullOrEmpty()) postJson.put("context", contextText)
             if (!hotpoints.isNullOrEmpty()) {
                 val hpArray = org.json.JSONArray()
                 hotpoints.forEach { hpArray.put(it) }
@@ -40,7 +41,7 @@ class FixService(private val baseUrl: String) {
             val postResponse = client.newCall(postRequest).execute()
             if (!postResponse.isSuccessful) {
                 DebugLogger.log("FIX", "ERR: ${postResponse.code}")
-                onError("Ошибка создания задачи: ${postResponse.code}")
+                onError(context.getString(R.string.error_creating_task, postResponse.code))
                 return
             }
 
@@ -58,9 +59,9 @@ class FixService(private val baseUrl: String) {
                 val getResponse = client.newCall(getRequest).execute()
                 if (!getResponse.isSuccessful) {
                     if (getResponse.code == 404) {
-                        onError("Задача не найдена (404)")
+                        onError(context.getString(R.string.task_not_found))
                     } else {
-                        onError("Ошибка сервера: ${getResponse.code}")
+                        onError(context.getString(R.string.server_error, getResponse.code))
                     }
                     return
                 }
@@ -76,11 +77,11 @@ class FixService(private val baseUrl: String) {
                     }
                     "error" -> {
                         DebugLogger.log("FIX", "ERR: ${statusData.optString("error")}")
-                        onError(statusData.optString("error", "Неизвестная ошибка модели"))
+                        onError(statusData.optString("error", context.getString(R.string.unknown_model_error)))
                         return
                     }
                     "processing" -> {
-                        onStatusUpdate("Обработка...")
+                        onStatusUpdate(context.getString(R.string.processing))
                     }
                 }
 
@@ -88,7 +89,7 @@ class FixService(private val baseUrl: String) {
             }
         } catch (e: Exception) {
             e.printStackTrace()
-            onError("Сетевая ошибка: ${e.message}")
+            onError(context.getString(R.string.network_error, e.message ?: ""))
         }
     }
 }

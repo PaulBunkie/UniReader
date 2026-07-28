@@ -11,9 +11,105 @@
     <string name="tab_styles">Styles</string>
     <string name="tab_colors">Colors</string>
     <string name="toc_title">Table of Contents</string>
+    <string name="menu_appearance">Appearance</string>
+    <string name="menu_retranslate">Re-translate Chapter</string>
+    <string name="menu_save_updates">Save Updates</string>
+    <string name="menu_api_log">API Log</string>
+    <string name="menu_switch_to_local">Switch to LOCAL API</string>
+    <string name="menu_switch_to_prod">Switch to PROD API</string>
+    <string name="selection_highlight">Highlight</string>
+    <string name="selection_fix">Fix</string>
+    <string name="selection_dict">Dictionary</string>
+    <string name="selection_delete">Delete</string>
     <string name="progress_zero">0%%</string>
-    <string name="brightness_format">Яркость: %d%%</string>
+    <string name="progress_format">%1$d/%2$d</string>
+    <string name="brightness_format">Brightness: %d%%</string>
 
+    <!-- Reader Activity -->
+    <string name="translating">Translating…</string>
+    <string name="retrying_translation">Retrying translation…</string>
+    <string name="translating_current_chapter">Translating current chapter…</string>
+    <string name="translation_failed">Translation failed</string>
+    <string name="prefetching_queue">Prefetching (%d in queue)…</string>
+    <string name="reading_progress_format">Ch %1$d/%2$d · Pg %3$d/%4$d · %5$d%%</string>
+    <string name="retry">Retry</string>
+    <string name="fix_text">Correction</string>
+    <string name="refresh">Refresh</string>
+    <string name="save">Save</string>
+    <string name="preparing_translation">Preparing translation…\nPlease wait</string>
+    <string name="edit_note">Edit Note</string>
+    <string name="edit_glossary_item">Edit Glossary: %s</string>
+    <string name="gender_hint">Gender (m/f/n)</string>
+    <string name="original_term_hint">Original Term</string>
+    <string name="translation_for">Translation for \'%s\'</string>
+    <string name="creating_task">Creating task…</string>
+    <string name="error_prefix">Error: %s</string>
+    <string name="error_disk_write">Disk Write Error</string>
+    <string name="error_server">Server Error</string>
+    <string name="error_toc_request_failed">TOC Request Failed: %d</string>
+    <string name="error_api_request_failed">API Request Failed: %d</string>
+    <string name="error_polling_failed">Polling Failed: %d</string>
+    <string name="updated">Updated</string>
+    <string name="add_to_glossary">Add to Glossary</string>
+    <string name="term_added">Term added</string>
+    <string name="add_to_dictionary">Add to Dictionary</string>
+    <string name="error_saving">Error saving</string>
+    <string name="no_pending_fixes">No pending fixes to save</string>
+    <string name="saving_improved_copy">Saving improved copy…</string>
+    <string name="saved_successfully">Saved successfully</string>
+    <string name="error_saving_file">Error saving file</string>
+    <string name="api_switched_to">API switched to %s</string>
+
+    <!-- Library / Main Activity -->
+    <string name="delete_book_title">Delete Book</string>
+    <string name="delete_book_message">Are you sure you want to delete \'%s\' and all its data (progress, highlights, translations)? The original file will not be affected.</string>
+    <string name="cancel">Cancel</string>
+    <string name="delete">Delete</string>
+    <string name="select_reading_mode">Select Reading Mode</string>
+    <string name="enable_ai_translation">Enable AI translation?</string>
+    <string name="original_mode">Original</string>
+    <string name="translate_and_read">Translate &amp; Read</string>
+
+    <!-- Dictionary / Glossary -->
+    <string name="my_notes">My Notes</string>
+    <string name="my_notes_count">My Notes (%d)</string>
+    <string name="glossary">Glossary</string>
+    <string name="original_text">Original</string>
+    <string name="translation_text">Translation</string>
+    <string name="attr">Attr</string>
+
+    <!-- Settings -->
+    <string name="paged_mode">Paged Mode</string>
+    <string name="fullscreen">Fullscreen</string>
+    <string name="screen_margins">Screen Margins (dp)</string>
+    <string name="left">Left</string>
+    <string name="right">Right</string>
+    <string name="top">Top</string>
+    <string name="bottom">Bottom</string>
+    <string name="font_size">Font Size</string>
+    <string name="paragraph_spacing">Paragraph Spacing</string>
+    <string name="line_height">Line Height</string>
+    <string name="first_line_indent">First Line Indent</string>
+    <string name="column_gap">Column Gap</string>
+    <string name="dark_mode">Dark Mode</string>
+
+    <!-- Placeholders / Misc -->
+    <string name="appearance_settings_placeholder">Appearance Settings Placeholder</string>
+    <string name="settings_placeholder_desc">This is a semi-transparent placeholder for settings.</string>
+    <string name="book_title_placeholder">Book Title</string>
+    <string name="chapter_name_placeholder">Chapter Name</string>
+    <string name="unknown_title">Unknown Title</string>
+    <string name="unknown_author">Unknown Author</string>
+    <string name="unknown_book">Unknown Book</string>
+    <string name="unknown_server_error">Unknown server error</string>
+
+    <!-- Service errors -->
+    <string name="error_creating_task">Error creating task: %d</string>
+    <string name="task_not_found">Task not found (404)</string>
+    <string name="server_error">Server error: %d</string>
+    <string name="unknown_model_error">Unknown model error</string>
+    <string name="processing">Processing…</string>
+    <string name="network_error">Network error: %s</string>
 
     <string name="lorem_ipsum">
         Lorem ipsum dolor sit amet, consectetur adipiscing elit. Nam in scelerisque sem. Mauris

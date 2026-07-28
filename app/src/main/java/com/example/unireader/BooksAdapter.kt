@@ -35,7 +35,7 @@ class BooksAdapter(
         holder.iconMode.setImageResource(iconRes)
 
         if (book.totalSpineItems > 0) {
-            holder.progress.text = "${book.lastSpineIndex + 1}/${book.totalSpineItems}"
+            holder.progress.text = holder.itemView.context.getString(R.string.progress_format, book.lastSpineIndex + 1, book.totalSpineItems)
             holder.progress.visibility = View.VISIBLE
         } else {
             holder.progress.visibility = View.GONE

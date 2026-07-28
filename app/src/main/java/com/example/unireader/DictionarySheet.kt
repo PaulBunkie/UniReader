@@ -23,7 +23,7 @@ class DictionarySheet(
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         
-        view.findViewById<TextView>(R.id.tvDictTitle).text = "My Notes (${items.size})"
+        view.findViewById<TextView>(R.id.tvDictTitle).text = getString(R.string.my_notes_count, items.size)
         
         val rv = view.findViewById<RecyclerView>(R.id.rvDict)
         rv.layoutManager = LinearLayoutManager(context)
@@ -32,7 +32,7 @@ class DictionarySheet(
 
     fun refresh(newItems: List<Highlight>) {
         (view?.findViewById<RecyclerView>(R.id.rvDict)?.adapter as? DictAdapter)?.update(newItems)
-        view?.findViewById<TextView>(R.id.tvDictTitle)?.text = "My Notes (${newItems.size})"
+        view?.findViewById<TextView>(R.id.tvDictTitle)?.text = getString(R.string.my_notes_count, newItems.size)
     }
 
     class DictAdapter(

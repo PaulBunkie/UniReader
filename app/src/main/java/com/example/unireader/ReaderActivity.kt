@@ -132,7 +132,7 @@ class ReaderActivity : AppCompatActivity() {
             window.attributes.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
         }
         
-        fixService = FixService(getApiBaseUrl())
+        fixService = FixService(this, getApiBaseUrl())
         
         setContentView(R.layout.activity_reader)
 
@@ -177,7 +177,7 @@ class ReaderActivity : AppCompatActivity() {
                 // Hide error state on big overlay
                 findViewById<ProgressBar>(R.id.pbInitial)?.visibility = View.VISIBLE
                 findViewById<View>(R.id.btnInitialRetry).visibility = View.GONE
-                findViewById<TextView>(R.id.tvInitialStatus)?.text = "Retrying translation..."
+                findViewById<TextView>(R.id.tvInitialStatus)?.text = getString(R.string.retrying_translation)
             }
         }
 
@@ -331,7 +331,7 @@ class ReaderActivity : AppCompatActivity() {
                     findViewById<ProgressBar>(R.id.pbProcessing)?.visibility = View.VISIBLE
                     findViewById<View>(R.id.btnProcessingRetry).visibility = View.GONE
                     findViewById<TextView>(R.id.tvProcessingStatus)?.apply {
-                        text = "Translating current chapter..."
+                        text = getString(R.string.translating_current_chapter)
                         setTextColor(if (settings.isDarkMode) Color.WHITE else Color.BLACK)
                     }
                 } else if (lastFailedSpineIndex == currentSpineIndex) {
@@ -340,7 +340,7 @@ class ReaderActivity : AppCompatActivity() {
                     findViewById<ProgressBar>(R.id.pbProcessing)?.visibility = View.GONE
                     findViewById<View>(R.id.btnProcessingRetry).visibility = View.VISIBLE
                     findViewById<TextView>(R.id.tvProcessingStatus)?.apply {
-                        text = "Translation failed"
+                        text = getString(R.string.translation_failed)
                         setTextColor(Color.RED)
                     }
                 } else if (queuedCount > 0) {
@@ -349,7 +349,7 @@ class ReaderActivity : AppCompatActivity() {
                     findViewById<ProgressBar>(R.id.pbProcessing)?.visibility = View.VISIBLE
                     findViewById<View>(R.id.btnProcessingRetry).visibility = View.GONE
                     findViewById<TextView>(R.id.tvProcessingStatus)?.apply {
-                        text = "Prefetching ($queuedCount in queue)..."
+                        text = getString(R.string.prefetching_queue, queuedCount)
                         setTextColor(if (settings.isDarkMode) Color.WHITE else Color.BLACK)
                     }
                 } else {
@@ -369,7 +369,7 @@ class ReaderActivity : AppCompatActivity() {
                     if (initialTranslationOverlay.visibility == View.VISIBLE) {
                         findViewById<ProgressBar>(R.id.pbInitial)?.visibility = View.GONE
                         findViewById<View>(R.id.btnInitialRetry).visibility = View.VISIBLE
-                        findViewById<TextView>(R.id.tvInitialStatus)?.text = "Error: $error"
+                        findViewById<TextView>(R.id.tvInitialStatus)?.text = getString(R.string.error_prefix, error)
                     }
                     
                     translationManager?.onActiveTasksChanged?.invoke()
@@ -390,7 +390,7 @@ class ReaderActivity : AppCompatActivity() {
 
     private fun updateBookTitles() {
         val book = epubBook ?: return
-        findViewById<TextView>(R.id.tvBookTitle)?.text = book.title ?: "Unknown Book"
+        findViewById<TextView>(R.id.tvBookTitle)?.text = book.title ?: getString(R.string.unknown_book)
         updateChapterTitle()
     }
 
@@ -432,24 +432,24 @@ class ReaderActivity : AppCompatActivity() {
             R.id.action_settings -> {
                 val anchor = findViewById<View>(R.id.action_settings) ?: appBarLayout
                 val popup = androidx.appcompat.widget.PopupMenu(this, anchor)
-                popup.menu.add("Appearance").setOnMenuItemClickListener {
+                popup.menu.add(getString(R.string.menu_appearance)).setOnMenuItemClickListener {
                     ReaderSettingsSheet().show(supportFragmentManager, "settings")
                     true
                 }
                 if (currentBookMetadata?.isTranslationMode == true) {
-                    popup.menu.add("Re-translate Chapter").setOnMenuItemClickListener {
+                    popup.menu.add(getString(R.string.menu_retranslate)).setOnMenuItemClickListener {
                         translationManager?.forceTranslate(currentSpineIndex)
                         true
                     }
                 }
-                popup.menu.add("Save Updates").setOnMenuItemClickListener {
+                popup.menu.add(getString(R.string.menu_save_updates)).setOnMenuItemClickListener {
                     val book = epubBook ?: return@setOnMenuItemClickListener true
                     val fileName = book.uri.toString().substringAfterLast("/").substringBeforeLast(".") + "_improved.epub"
                     saveDocumentLauncher.launch(fileName)
                     true
                 }
                 if (currentBookMetadata?.isTranslationMode == true) {
-                    popup.menu.add("My Notes").setOnMenuItemClickListener {
+                    popup.menu.add(getString(R.string.my_notes)).setOnMenuItemClickListener {
                         val bookUri = epubBook?.uri?.toString() ?: return@setOnMenuItemClickListener true
                         val dictEntries = highlightDb.getDictEntries(bookUri)
                         DictionarySheet(dictEntries, 
@@ -463,7 +463,7 @@ class ReaderActivity : AppCompatActivity() {
                         ).show(supportFragmentManager, "dictionary")
                         true
                     }
-                    popup.menu.add("Glossary").setOnMenuItemClickListener {
+                    popup.menu.add(getString(R.string.glossary)).setOnMenuItemClickListener {
                         val bookUri = currentBookMetadata?.uri ?: return@setOnMenuItemClickListener true
                         val latestMetadata = LibraryProvider(this).getBooks().find { it.uri == bookUri }
                         val glossary = latestMetadata?.serverGlossary ?: "{}"
@@ -474,17 +474,17 @@ class ReaderActivity : AppCompatActivity() {
                         ).show(supportFragmentManager, "server_glossary")
                         true
                     }
-                    popup.menu.add("API Log").setOnMenuItemClickListener {
+                    popup.menu.add(getString(R.string.menu_api_log)).setOnMenuItemClickListener {
                         apiLogOverlay.visibility = if (apiLogOverlay.visibility == View.VISIBLE) View.GONE else View.VISIBLE
                         true
                     }
-                    val apiLabel = if (settings.isProdApi) "Switch to LOCAL API" else "Switch to PROD API"
+                    val apiLabel = if (settings.isProdApi) getString(R.string.menu_switch_to_local) else getString(R.string.menu_switch_to_prod)
                     popup.menu.add(apiLabel).setOnMenuItemClickListener {
                         settings.isProdApi = !settings.isProdApi
                         settings.save(this)
                         
                         // Re-init services
-                        fixService = FixService(getApiBaseUrl())
+                        fixService = FixService(this, getApiBaseUrl())
                         epubBook?.let { book ->
                             currentBookMetadata?.uri?.let { uri ->
                                 if (currentBookMetadata?.isTranslationMode == true) {
@@ -493,7 +493,8 @@ class ReaderActivity : AppCompatActivity() {
                             }
                         }
                         
-                        Toast.makeText(this, "API switched to ${if (settings.isProdApi) "PROD" else "LOCAL"}", Toast.LENGTH_SHORT).show()
+                        val mode = if (settings.isProdApi) "PROD" else "LOCAL"
+                    Toast.makeText(this, getString(R.string.api_switched_to, mode), Toast.LENGTH_SHORT).show()
                         true
                     }
                 }
@@ -1081,7 +1082,7 @@ class ReaderActivity : AppCompatActivity() {
                     val sectionProgress = section.toFloat() / spineSize
                     val pageProgress = if (totalPages > 0) (page.toFloat() / totalPages) / spineSize else 0f
                     val percent = ((sectionProgress + pageProgress) * 100).toInt().coerceIn(0, 100)
-                    val text = "Глава ${section + 1}/$spineSize · Стр ${page + 1}/$totalPages · $percent%"
+                    val text = getString(R.string.reading_progress_format, section + 1, spineSize, page + 1, totalPages, percent)
                     findViewById<TextView>(R.id.tvProgressPlaceholder)?.text = text
                     
                     // Debounced save
@@ -1259,19 +1260,19 @@ class ReaderActivity : AppCompatActivity() {
                     var btnHighlight = document.createElement('button');
                     btnHighlight.id = 'uni-highlight-btn';
                     btnHighlight.className = 'uni-menu-btn';
-                    btnHighlight.innerText = 'Пометить';
+                    btnHighlight.innerText = '${getString(R.string.selection_highlight)}';
                     menu.appendChild(btnHighlight);
                     
                     var btnFix = document.createElement('button');
                     btnFix.id = 'uni-fix-btn';
                     btnFix.className = 'uni-menu-btn';
-                    btnFix.innerText = 'Исправить';
+                    btnFix.innerText = '${getString(R.string.selection_fix)}';
                     menu.appendChild(btnFix);
                     
                     var btnDict = document.createElement('button');
                     btnDict.id = 'uni-dict-btn';
                     btnDict.className = 'uni-menu-btn';
-                    btnDict.innerText = 'В словарь';
+                    btnDict.innerText = '${getString(R.string.selection_dict)}';
                     menu.appendChild(btnDict);
                     
                     document.body.appendChild(menu);
@@ -1492,13 +1493,13 @@ class ReaderActivity : AppCompatActivity() {
                         var isTranslationMode = ${currentBookMetadata?.isTranslationMode == true};
                         var existingMark = container.closest('.uni-highlight, .uni-fix, .uni-dict');
                         if (existingMark) {
-                            btnHighlight.innerText = 'Удалить';
+                            btnHighlight.innerText = '${getString(R.string.selection_delete)}';
                             btnHighlight.setAttribute('data-mode', 'delete');
                             btnHighlight.setAttribute('data-target-id', existingMark.getAttribute('data-id'));
                             btnFix.style.display = 'none';
                             btnDict.style.display = 'none';
                         } else {
-                            btnHighlight.innerText = 'Пометить';
+                            btnHighlight.innerText = '${getString(R.string.selection_highlight)}';
                             btnHighlight.setAttribute('data-mode', 'save');
                             btnFix.style.display = isTranslationMode ? 'block' : 'none';
                             btnDict.style.display = isTranslationMode ? 'block' : 'none';
@@ -2491,9 +2492,9 @@ class ReaderActivity : AppCompatActivity() {
         }
         
         com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
-            .setTitle("Edit Note")
+            .setTitle(R.string.edit_note)
             .setView(input)
-            .setPositiveButton("Save") { _, _ ->
+            .setPositiveButton(R.string.save) { _, _ ->
                 val newTranslation = input.text.toString().trim()
                 if (newTranslation.isNotEmpty()) {
                     val updated = highlight.copy(replacementText = "[DICT_P]:$newTranslation")
@@ -2506,7 +2507,7 @@ class ReaderActivity : AppCompatActivity() {
                     (supportFragmentManager.findFragmentByTag("dictionary") as? DictionarySheet)?.refresh(dictEntries)
                 }
             }
-            .setNegativeButton("Cancel", null)
+            .setNegativeButton(R.string.cancel, null)
             .show()
     }
 
@@ -2521,12 +2522,12 @@ class ReaderActivity : AppCompatActivity() {
         }
         
         val etTranslation = EditText(this).apply {
-            hint = "Перевод"
+            hint = getString(R.string.translation_text)
             setText(item.translation)
         }
         
         val etGender = EditText(this).apply {
-            hint = "Род (m/f/n)"
+            hint = getString(R.string.gender_hint)
             setText(item.meta ?: "")
         }
         
@@ -2534,9 +2535,9 @@ class ReaderActivity : AppCompatActivity() {
         layout.addView(etGender)
         
         com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
-            .setTitle("Edit Glossary: ${item.original}")
+            .setTitle(getString(R.string.edit_glossary_item, item.original))
             .setView(layout)
-            .setPositiveButton("Save") { _, _ ->
+            .setPositiveButton(R.string.save) { _, _ ->
                 val newTrans = etTranslation.text.toString().trim()
                 val newGender = etGender.text.toString().trim()
                 
@@ -2556,7 +2557,7 @@ class ReaderActivity : AppCompatActivity() {
                         
                         latestMetadata.serverGlossary = root.toString()
                         LibraryProvider(this).addBook(latestMetadata)
-                        Toast.makeText(this, "Updated", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(this, R.string.updated, Toast.LENGTH_SHORT).show()
                         
                         // Refresh sheet if open
                         (supportFragmentManager.findFragmentByTag("server_glossary") as? ServerGlossarySheet)?.refresh(root.toString())
@@ -2565,7 +2566,7 @@ class ReaderActivity : AppCompatActivity() {
                     Log.e("Reader", "Error updating glossary JSON", e)
                 }
             }
-            .setNegativeButton("Cancel", null)
+            .setNegativeButton(R.string.cancel, null)
             .show()
     }
 
@@ -2579,18 +2580,18 @@ class ReaderActivity : AppCompatActivity() {
             setPadding(48, 32, 48, 32)
         }
         
-        val etOriginal = EditText(this).apply { hint = "Original Term" }
-        val etTranslation = EditText(this).apply { hint = "Translation" }
-        val etGender = EditText(this).apply { hint = "Gender (m/f/n)" }
+        val etOriginal = EditText(this).apply { hint = getString(R.string.original_term_hint) }
+        val etTranslation = EditText(this).apply { hint = getString(R.string.translation_text) }
+        val etGender = EditText(this).apply { hint = getString(R.string.gender_hint) }
         
         layout.addView(etOriginal)
         layout.addView(etTranslation)
         layout.addView(etGender)
         
         com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
-            .setTitle("Add to Glossary")
+            .setTitle(R.string.add_to_glossary)
             .setView(layout)
-            .setPositiveButton("Add") { _, _ ->
+            .setPositiveButton(R.string.add_to_glossary) { _, _ ->
                 val original = etOriginal.text.toString().trim()
                 val translation = etTranslation.text.toString().trim()
                 val gender = etGender.text.toString().trim()
@@ -2611,13 +2612,13 @@ class ReaderActivity : AppCompatActivity() {
                         LibraryProvider(this).addBook(latestMetadata)
                         
                         (supportFragmentManager.findFragmentByTag("server_glossary") as? ServerGlossarySheet)?.refresh(root.toString())
-                        Toast.makeText(this, "Term added", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(this, R.string.term_added, Toast.LENGTH_SHORT).show()
                     } catch (e: Exception) {
                         Log.e("Reader", "Error adding to glossary", e)
                     }
                 }
             }
-            .setNegativeButton("Cancel", null)
+            .setNegativeButton(R.string.cancel, null)
             .show()
     }
 
@@ -2627,14 +2628,14 @@ class ReaderActivity : AppCompatActivity() {
             val text = obj.getString("text")
             
             val input = EditText(this).apply {
-                hint = "Translation for '$text'"
+                hint = getString(R.string.translation_for, text)
                 setPadding(48, 32, 48, 32)
             }
             
             com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
-                .setTitle("Add to Dictionary")
+                .setTitle(R.string.add_to_dictionary)
                 .setView(input)
-                .setPositiveButton("Save") { _, _ ->
+                .setPositiveButton(R.string.save) { _, _ ->
                     val translation = input.text.toString().trim()
                     if (translation.isNotEmpty()) {
                         val highlight = Highlight(
@@ -2674,13 +2675,13 @@ class ReaderActivity : AppCompatActivity() {
         fixOverlay.visibility = View.VISIBLE
         fixLoading.visibility = View.VISIBLE
         fixActions.visibility = View.GONE
-        tvFixResult.text = "Создание задачи..."
+        tvFixResult.text = getString(R.string.creating_task)
         tvFixModel.visibility = View.GONE
         
         lifecycleScope.launch(Dispatchers.IO) {
             fixService.improveText(
                 text = text,
-                context = context,
+                contextText = context,
                 hotpoints = hotpoints,
                 onStatusUpdate = { status ->
                     runOnUiThread { tvFixResult.text = status }
@@ -2701,7 +2702,7 @@ class ReaderActivity : AppCompatActivity() {
                     runOnUiThread {
                         fixLoading.visibility = View.GONE
                         fixActions.visibility = View.VISIBLE
-                        tvFixResult.text = "Ошибка: $error"
+                        tvFixResult.text = getString(R.string.error_prefix, error)
                     }
                 }
             )
@@ -2734,7 +2735,7 @@ class ReaderActivity : AppCompatActivity() {
             
         } catch (e: Exception) {
             Log.e("Reader", "Error during direct save", e)
-            Toast.makeText(this, "Error saving", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, R.string.error_saving, Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -2744,12 +2745,12 @@ class ReaderActivity : AppCompatActivity() {
         val pendingFixes = highlightDb.getPendingFixes(bookUriString)
         
         if (pendingFixes.isEmpty()) {
-            Toast.makeText(this, "No pending fixes to save", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, R.string.no_pending_fixes, Toast.LENGTH_SHORT).show()
             return
         }
 
         val progressDialog = android.app.ProgressDialog(this).apply {
-            setMessage("Saving improved copy...")
+            setMessage(getString(R.string.saving_improved_copy))
             setCancelable(false)
             show()
         }
@@ -2761,12 +2762,12 @@ class ReaderActivity : AppCompatActivity() {
                 progressDialog.dismiss()
                 if (success) {
                     highlightDb.deleteFixes(bookUriString)
-                    Toast.makeText(this@ReaderActivity, "Saved successfully", Toast.LENGTH_LONG).show()
+                    Toast.makeText(this@ReaderActivity, R.string.saved_successfully, Toast.LENGTH_LONG).show()
                     
                     // Note: We don't reload here because we saved to a NEW file.
                     // The current reader is still pointing to the original URI.
                 } else {
-                    Toast.makeText(this@ReaderActivity, "Error saving file", Toast.LENGTH_LONG).show()
+                    Toast.makeText(this@ReaderActivity, R.string.error_saving_file, Toast.LENGTH_LONG).show()
                 }
             }
         }

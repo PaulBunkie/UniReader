@@ -38,13 +38,13 @@ class MainActivity : AppCompatActivity() {
 
     private fun showReadModeDialog(uri: Uri, book: EpubBook) {
         MaterialAlertDialogBuilder(this)
-            .setTitle("Select Reading Mode")
-            .setMessage("Enable AI translation?")
-            .setNeutralButton("Cancel", null)
-            .setNegativeButton("Original") { _, _ ->
+            .setTitle(R.string.select_reading_mode)
+            .setMessage(R.string.enable_ai_translation)
+            .setNeutralButton(R.string.cancel, null)
+            .setNegativeButton(R.string.original_mode) { _, _ ->
                 openBook(uri, book, isTranslation = false)
             }
-            .setPositiveButton("Translate & Read") { _, _ ->
+            .setPositiveButton(R.string.translate_and_read) { _, _ ->
                 openBook(uri, book, isTranslation = true)
             }
             .show()
@@ -65,13 +65,13 @@ class MainActivity : AppCompatActivity() {
         val finalTitle = if (!epubBook.title.isNullOrBlank()) {
             epubBook.title
         } else {
-            getFileNameFromUri(uri) ?: "Unknown Title"
+            getFileNameFromUri(uri) ?: getString(R.string.unknown_title)
         }
 
         libraryProvider.addBook(BookMetadata(
             uri = sourceUriString,
             title = finalTitle,
-            author = epubBook.author ?: "Unknown Author",
+            author = epubBook.author ?: getString(R.string.unknown_author),
             isTranslationMode = isTranslation,
             localCopyUri = localCopyUriString,
             totalSpineItems = epubBook.spine.size

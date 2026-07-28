@@ -20,7 +20,7 @@
             android:layout_height="wrap_content"
             android:background="@android:color/transparent"
             android:layout_marginTop="8dp"
-            android:text="Paged Mode"
+            android:text="@string/paged_mode"
             android:textColor="?attr/colorOnSurface"
             android:textSize="14sp"
             android:textStyle="bold" />
@@ -31,7 +31,7 @@
             android:layout_height="wrap_content"
             android:background="@android:color/transparent"
             android:layout_marginTop="16dp"
-            android:text="Fullscreen"
+            android:text="@string/fullscreen"
             android:textColor="?attr/colorOnSurface"
             android:textSize="14sp"
             android:textStyle="bold" />
@@ -42,7 +42,7 @@
             android:layout_height="wrap_content"
             android:background="@android:color/transparent"
             android:layout_marginTop="24dp"
-            android:text="Screen Margins (dp)"
+            android:text="@string/screen_margins"
             android:textColor="?attr/colorOnSurface"
             android:textSize="14sp"
             android:textStyle="bold" />
@@ -71,7 +71,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Left"
+                        android:text="@string/left"
                         android:textColor="?attr/colorOnSurfaceVariant"
                         android:textSize="12sp" />
                     <TextView
@@ -112,7 +112,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Right"
+                        android:text="@string/right"
                         android:textColor="?attr/colorOnSurfaceVariant"
                         android:textSize="12sp" />
                     <TextView
@@ -163,7 +163,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Top"
+                        android:text="@string/top"
                         android:textColor="?attr/colorOnSurfaceVariant"
                         android:textSize="12sp" />
                     <TextView
@@ -204,7 +204,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Bottom"
+                        android:text="@string/bottom"
                         android:textColor="?attr/colorOnSurfaceVariant"
                         android:textSize="12sp" />
                     <TextView

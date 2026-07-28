@@ -16,7 +16,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_centerVertical="true"
-            android:text="Glossary"
+            android:text="@string/glossary"
             android:textColor="?attr/colorOnSurface"
             android:textSize="20sp"
             android:textStyle="bold" />
@@ -37,9 +37,9 @@
         android:orientation="horizontal"
         android:paddingBottom="8dp"
         android:alpha="0.5">
-        <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="Original" android:textSize="12sp" android:textStyle="bold" />
-        <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="Translation" android:textSize="12sp" android:textStyle="bold" android:paddingHorizontal="8dp"/>
-        <TextView android:layout_width="40dp" android:layout_height="wrap_content" android:text="Attr" android:textSize="12sp" android:textStyle="bold" android:gravity="center"/>
+        <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="@string/original_text" android:textSize="12sp" android:textStyle="bold" />
+        <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="@string/translation_text" android:textSize="12sp" android:textStyle="bold" android:paddingHorizontal="8dp"/>
+        <TextView android:layout_width="40dp" android:layout_height="wrap_content" android:text="@string/attr" android:textSize="12sp" android:textStyle="bold" android:gravity="center"/>
     </LinearLayout>
 
     <View
