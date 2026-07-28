@@ -80,6 +80,15 @@ class ReaderActivity : AppCompatActivity() {
     private var lastKnownPosition: Triple<Int, Int, Int>? = null
     private val savePositionRunnable = Runnable { saveReadingPosition() }
     private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    
+    private var pendingReloadIndex = -1
+    private var pendingReloadJumpToLast = false
+    private val reloadChapterRunnable = Runnable {
+        if (pendingReloadIndex != -1) {
+            loadSpineItem(pendingReloadIndex, pendingReloadJumpToLast)
+            pendingReloadIndex = -1
+        }
+    }
 
     lateinit var settings: ReaderSettings
     private lateinit var gestureDetector: GestureDetector
@@ -564,6 +573,7 @@ class ReaderActivity : AppCompatActivity() {
     override fun onPause() {
         super.onPause()
         mainHandler.removeCallbacks(savePositionRunnable)
+        mainHandler.removeCallbacks(reloadChapterRunnable)
         saveReadingPosition()
     }
 
@@ -1051,10 +1061,16 @@ class ReaderActivity : AppCompatActivity() {
                     
                     if (currentSpineIndex != index) {
                         if (currentBookMetadata?.isTranslationMode == true) {
-                            // In translation mode, we force a full container reload to pick up fresh translations.
-                            // Forward navigation: jumpToLast = false (land at start).
-                            // Backward navigation: jumpToLast = true (land at end).
-                            loadSpineItem(index, jumpToLast = index < currentSpineIndex)
+                            mainHandler.removeCallbacks(reloadChapterRunnable)
+                            pendingReloadJumpToLast = index < currentSpineIndex
+                            pendingReloadIndex = index
+                            
+                            // Update UI immediately (title)
+                            currentSpineIndex = index
+                            updateChapterTitle()
+                            
+                            // Delay container refresh to allow scroll/page flip to finish
+                            mainHandler.postDelayed(reloadChapterRunnable, 500)
                             return@runOnUiThread
                         }
 
@@ -2072,6 +2088,9 @@ class ReaderActivity : AppCompatActivity() {
     }
 
     private fun loadSpineItem(index: Int, jumpToLast: Boolean = false) {
+        mainHandler.removeCallbacks(reloadChapterRunnable)
+        pendingReloadIndex = -1
+        
         lastKnownPosition = null // CLEAR CACHE on intentional jump
         currentSpineIndex = index
         shouldJumpToLastPage = jumpToLast
