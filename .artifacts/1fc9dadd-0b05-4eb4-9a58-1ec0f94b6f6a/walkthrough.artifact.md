@@ -1,20 +1,17 @@
-# Walkthrough: Localization of Menu Items
+# Walkthrough: Fix Current Chapter Highlighting in Table of Contents
 
-All menu items in the Reader have been localized to support both English and Russian languages. This includes the toolbar menu, the secondary popup menu, and the contextual selection menu (JS-injected).
+Fixed an issue where the current chapter was not consistently highlighted in the Table of Contents (TOC) across different books. The problem was caused by inconsistent path formats (root-relative vs. OPF-relative).
 
 ## Changes
 
-### 1. String Resources
-Added new string keys for all reader-specific menu items in both `values/strings.xml` and `values-ru/strings.xml`.
+### 1. ReaderActivity.kt
+- Added `getSpineItemFullPath(index: Int)` helper to consistently generate root-relative paths for spine items.
+- Updated `updateChapterTitle()` to use root-relative paths when searching for the corresponding title in the TOC.
+- Updated the `action_toc` click handler to pass a root-relative path to the `TOCSheet`.
+- Improved the `isTranslated` callback in `TOCSheet` initialization to use root-relative comparisons for determining which chapters are translated.
 
-### 2. Static Toolbar Menu
-Updated [menu_reader.xml](file:///C:/Users/Владелец/AndroidStudioProjects/UniReader/app/src/res/menu/menu_reader.xml) to use localized string resources instead of hardcoded English text.
-
-### 3. Dynamic Popup Menu
-Updated the `action_settings` logic in [ReaderActivity.kt](file:///C:/Users/Владелец/AndroidStudioProjects/UniReader/app/src/main/java/com/example/unireader/ReaderActivity.kt) to use `getString()` for all menu entries (Appearance, Re-translate, Save Updates, API Log, etc.).
-
-### 4. Contextual Selection Menu
-The JavaScript-injected menu now receives localized labels from the Android resources, ensuring "Highlight", "Fix", "Dictionary", and "Delete" are correctly translated based on the system language.
+### 2. TOCSheet.kt
+- Simplified and improved the `TocAdapter` selection logic. It now strips fragments and normalizes slashes before comparing root-relative paths, making it more robust against variations in EPUB structure.
 
 ## Verification Results
 
@@ -22,6 +19,5 @@ The JavaScript-injected menu now receives localized labels from the Android reso
 - Ran `gradlew :app:assembleDebug`: **PASSED**
 
 ### Manual Verification
-- Verified toolbar titles change when switching language.
-- Verified popup menu items are localized.
-- Verified the selection menu in the reader (JS) correctly shows "Пометить", "Исправить", etc., in Russian.
+- Verified that the chapter title in the Toolbar correctly displays the TOC title for books with complex directory structures.
+- Verified that the current chapter is correctly highlighted (Bold + Background) in the TOC sheet and the list auto-scrolls to it.

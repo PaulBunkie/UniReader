@@ -1,5 +1,3 @@
-- [x] Update string resources (EN & RU)
-- [x] Localize `menu_reader.xml`
-- [x] Update dynamic menu items in `ReaderActivity.kt`
-- [x] Localize JS selection menu labels in `ReaderActivity.kt`
-- [x] Verify build
+- [x] Update `ReaderActivity.kt` to handle root-relative paths for TOC matching
+- [x] Improve `TOCSheet.kt` matching logic in `TocAdapter`
+- [x] Verify fix by building and checking titles/highlighting

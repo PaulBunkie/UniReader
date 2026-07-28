@@ -50,10 +50,10 @@ class TOCSheet(
 
         init {
             if (currentHref != null) {
+                val cleanCurrent = currentHref.substringBefore("#").replace("\\", "/")
                 selectedIndex = items.indexOfFirst { item ->
-                    item.href == currentHref || currentHref.endsWith(item.href) || item.href.endsWith(currentHref) ||
-                            item.href.substringBefore("#") == currentHref ||
-                            currentHref.endsWith(item.href.substringBefore("#"))
+                    val cleanItem = item.href.substringBefore("#").replace("\\", "/")
+                    cleanItem == cleanCurrent
                 }
             }
         }

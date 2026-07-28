@@ -397,11 +397,20 @@ class ReaderActivity : AppCompatActivity() {
     private fun updateChapterTitle() {
         val book = epubBook ?: return
         if (currentSpineIndex < book.spine.size) {
-            val item = book.spine[currentSpineIndex]
-            val href = item.href
-            val tocTitle = book.toc.find { it.href == href || href.endsWith(it.href) || it.href.endsWith(href) }?.title
-            findViewById<TextView>(R.id.tvChapterTitle)?.text = tocTitle ?: href
+            val fullHref = getSpineItemFullPath(currentSpineIndex)
+            val tocTitle = book.toc.find { 
+                it.href == fullHref || it.href.substringBefore("#") == fullHref
+            }?.title
+            findViewById<TextView>(R.id.tvChapterTitle)?.text = tocTitle ?: book.spine[currentSpineIndex].href
         }
+    }
+
+    private fun getSpineItemFullPath(index: Int): String {
+        val book = epubBook ?: return ""
+        if (index < 0 || index >= book.spine.size) return ""
+        val item = book.spine[index]
+        val opfDir = File(book.opfPath).parent ?: ""
+        return if (opfDir.isEmpty()) item.href else "$opfDir/${item.href}".replace("//", "/")
     }
 
     override fun onCreateOptionsMenu(menu: Menu): Boolean {
@@ -414,12 +423,14 @@ class ReaderActivity : AppCompatActivity() {
             android.R.id.home -> { finish(); true }
             R.id.action_toc -> {
                 epubBook?.let { book ->
-                    val currentHref = if (currentSpineIndex < book.spine.size) book.spine[currentSpineIndex].href else null
+                    val currentHref = if (currentSpineIndex < book.spine.size) getSpineItemFullPath(currentSpineIndex) else null
                     TOCSheet(book.toc, currentHref, 
                         isTranslated = { href ->
                             val cleanHref = href.substringBefore("#")
+                            val opfDir = File(book.opfPath).parent ?: ""
                             val idx = book.spine.indexOfFirst { 
-                                it.href == cleanHref || cleanHref.endsWith(it.href) || it.href.endsWith(cleanHref) 
+                                val itemFull = if (opfDir.isEmpty()) it.href else "$opfDir/${it.href}".replace("//", "/")
+                                itemFull == cleanHref
                             }
                             if (idx != -1) translationManager?.isChapterTranslated(idx) == true else false
                         }
