@@ -8,9 +8,8 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import java.io.IOException
 
-class FixService {
+class FixService(private val baseUrl: String) {
     private val client = OkHttpClient()
-    private val baseUrl = "http://136.109.52.87:8080/api"
     private val jsonMediaType = "application/json; charset=utf-8".toMediaType()
 
     suspend fun improveText(

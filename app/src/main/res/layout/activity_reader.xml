@@ -41,6 +41,7 @@
         android:background="?attr/panelBackgroundColor"
         android:visibility="gone">
 
+        <!-- Reading Progress (Shown when idle) -->
         <TextView
             android:id="@+id/tvProgressPlaceholder"
             android:layout_width="wrap_content"
@@ -48,7 +49,47 @@
             android:layout_gravity="center"
             android:text="@string/progress_zero"
             android:textColor="?attr/colorOnSurface"
-            android:textStyle="bold" />
+            android:textStyle="bold"
+            android:visibility="visible" />
+
+        <!-- Translation Status (Shown when active) -->
+        <LinearLayout
+            android:id="@+id/translationStatusContainer"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:gravity="center"
+            android:orientation="horizontal"
+            android:visibility="gone">
+
+            <ProgressBar
+                android:id="@+id/pbProcessing"
+                android:layout_width="20dp"
+                android:layout_height="20dp"
+                android:indeterminateTint="?attr/colorPrimary" />
+
+            <TextView
+                android:id="@+id/tvProcessingStatus"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="12dp"
+                android:text="Translating..."
+                android:textColor="?attr/colorOnSurface"
+                android:textSize="12sp"
+                android:textStyle="bold" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnProcessingRetry"
+                style="@style/Widget.Material3.Button.TonalButton"
+                android:layout_width="wrap_content"
+                android:layout_height="32dp"
+                android:layout_marginStart="12dp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:text="Retry"
+                android:textSize="10sp"
+                android:visibility="gone" />
+        </LinearLayout>
 
     </FrameLayout>
 
@@ -157,51 +198,6 @@
         </LinearLayout>
     </com.google.android.material.card.MaterialCardView>
 
-    <com.google.android.material.card.MaterialCardView
-        android:id="@+id/processingOverlay"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="center"
-        android:visibility="gone"
-        app:cardBackgroundColor="#AA000000"
-        app:cardCornerRadius="12dp"
-        app:cardElevation="10dp"
-        app:strokeWidth="0dp">
-
-        <LinearLayout
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:gravity="center"
-            android:orientation="vertical"
-            android:padding="24dp">
-
-            <ProgressBar
-                android:id="@+id/pbProcessing"
-                android:layout_width="40dp"
-                android:layout_height="40dp"
-                android:indeterminateTint="#FFFFFF" />
-
-            <TextView
-                android:id="@+id/tvProcessingStatus"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
-                android:text="Translating..."
-                android:textColor="#FFFFFF"
-                android:textSize="14sp"
-                android:textStyle="bold"
-                android:textAlignment="center" />
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnProcessingRetry"
-                style="@style/Widget.Material3.Button.TonalButton"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
-                android:text="Retry"
-                android:visibility="gone" />
-        </LinearLayout>
-    </com.google.android.material.card.MaterialCardView>
 
     <FrameLayout
         android:id="@+id/initialTranslationOverlay"

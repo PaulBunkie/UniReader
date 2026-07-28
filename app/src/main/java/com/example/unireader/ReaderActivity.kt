@@ -22,6 +22,7 @@ import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.EditText
+import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.ScrollView
 import android.widget.TextView
@@ -92,7 +93,7 @@ class ReaderActivity : AppCompatActivity() {
     private lateinit var fixActions: View
     private lateinit var btnFixRefresh: View
     private lateinit var btnFixAccept: View
-    private val fixService = FixService()
+    private lateinit var fixService: FixService
     private var lastFixRequestJson: String? = null
     private var lastImprovedText: String? = null
     
@@ -100,7 +101,7 @@ class ReaderActivity : AppCompatActivity() {
 
     private var translationManager: TranslationManager? = null
     private var currentBookMetadata: BookMetadata? = null
-    private lateinit var processingOverlay: View
+    private lateinit var translationStatusContainer: View
     private lateinit var initialTranslationOverlay: View
     private lateinit var apiLogOverlay: View
     private lateinit var tvApiLog: TextView
@@ -131,6 +132,8 @@ class ReaderActivity : AppCompatActivity() {
             window.attributes.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
         }
         
+        fixService = FixService(getApiBaseUrl())
+        
         setContentView(R.layout.activity_reader)
 
         fixOverlay = findViewById(R.id.fixOverlay)
@@ -153,7 +156,7 @@ class ReaderActivity : AppCompatActivity() {
             acceptImprovement()
         }
 
-        processingOverlay = findViewById(R.id.processingOverlay)
+        translationStatusContainer = findViewById(R.id.translationStatusContainer)
         initialTranslationOverlay = findViewById(R.id.initialTranslationOverlay)
         apiLogOverlay = findViewById(R.id.apiLogOverlay)
         tvApiLog = findViewById(R.id.tvApiLog)
@@ -297,8 +300,12 @@ class ReaderActivity : AppCompatActivity() {
         outState.putBoolean("paged_mode", isPagedMode)
     }
 
+    private fun getApiBaseUrl(): String {
+        return if (settings.isProdApi) "http://136.109.52.87:8080/api" else "http://10.0.2.2:8080/api"
+    }
+
     private fun initTranslation(book: EpubBook, originalUri: String) {
-        translationManager = TranslationManager(this, book, originalUri)
+        translationManager = TranslationManager(this, book, originalUri, getApiBaseUrl())
         
         // Warm Start: Hide overlay if current chapter is already ready
         if (translationManager?.isChapterTranslated(currentSpineIndex) == true) {
@@ -316,16 +323,20 @@ class ReaderActivity : AppCompatActivity() {
                 val tasks = translationManager?.getActiveTasks() ?: emptySet()
                 val queuedCount = translationManager?.getQueuedCount() ?: 0
                 
+                val tvProgress = findViewById<TextView>(R.id.tvProgressPlaceholder)
+                
                 if (tasks.contains(currentSpineIndex)) {
-                    processingOverlay.visibility = View.VISIBLE
+                    translationStatusContainer.visibility = View.VISIBLE
+                    tvProgress?.visibility = View.GONE
                     findViewById<ProgressBar>(R.id.pbProcessing)?.visibility = View.VISIBLE
                     findViewById<View>(R.id.btnProcessingRetry).visibility = View.GONE
                     findViewById<TextView>(R.id.tvProcessingStatus)?.apply {
                         text = "Translating current chapter..."
-                        setTextColor(Color.WHITE)
+                        setTextColor(if (settings.isDarkMode) Color.WHITE else Color.BLACK)
                     }
                 } else if (lastFailedSpineIndex == currentSpineIndex) {
-                    processingOverlay.visibility = View.VISIBLE
+                    translationStatusContainer.visibility = View.VISIBLE
+                    tvProgress?.visibility = View.GONE
                     findViewById<ProgressBar>(R.id.pbProcessing)?.visibility = View.GONE
                     findViewById<View>(R.id.btnProcessingRetry).visibility = View.VISIBLE
                     findViewById<TextView>(R.id.tvProcessingStatus)?.apply {
@@ -333,15 +344,17 @@ class ReaderActivity : AppCompatActivity() {
                         setTextColor(Color.RED)
                     }
                 } else if (queuedCount > 0) {
-                    processingOverlay.visibility = View.VISIBLE
+                    translationStatusContainer.visibility = View.VISIBLE
+                    tvProgress?.visibility = View.GONE
                     findViewById<ProgressBar>(R.id.pbProcessing)?.visibility = View.VISIBLE
                     findViewById<View>(R.id.btnProcessingRetry).visibility = View.GONE
                     findViewById<TextView>(R.id.tvProcessingStatus)?.apply {
                         text = "Prefetching ($queuedCount in queue)..."
-                        setTextColor(Color.WHITE)
+                        setTextColor(if (settings.isDarkMode) Color.WHITE else Color.BLACK)
                     }
                 } else {
-                    processingOverlay.visibility = View.GONE
+                    translationStatusContainer.visibility = View.GONE
+                    tvProgress?.visibility = View.VISIBLE
                 }
             }
         }
@@ -402,7 +415,15 @@ class ReaderActivity : AppCompatActivity() {
             R.id.action_toc -> {
                 epubBook?.let { book ->
                     val currentHref = if (currentSpineIndex < book.spine.size) book.spine[currentSpineIndex].href else null
-                    TOCSheet(book.toc, currentHref) { href ->
+                    TOCSheet(book.toc, currentHref, 
+                        isTranslated = { href ->
+                            val cleanHref = href.substringBefore("#")
+                            val idx = book.spine.indexOfFirst { 
+                                it.href == cleanHref || cleanHref.endsWith(it.href) || it.href.endsWith(cleanHref) 
+                            }
+                            if (idx != -1) translationManager?.isChapterTranslated(idx) == true else false
+                        }
+                    ) { href ->
                         handleInternalLink("epub://$href")
                     }.show(supportFragmentManager, "toc")
                 }
@@ -415,31 +436,66 @@ class ReaderActivity : AppCompatActivity() {
                     ReaderSettingsSheet().show(supportFragmentManager, "settings")
                     true
                 }
+                if (currentBookMetadata?.isTranslationMode == true) {
+                    popup.menu.add("Re-translate Chapter").setOnMenuItemClickListener {
+                        translationManager?.forceTranslate(currentSpineIndex)
+                        true
+                    }
+                }
                 popup.menu.add("Save Updates").setOnMenuItemClickListener {
                     val book = epubBook ?: return@setOnMenuItemClickListener true
                     val fileName = book.uri.toString().substringAfterLast("/").substringBeforeLast(".") + "_improved.epub"
                     saveDocumentLauncher.launch(fileName)
                     true
                 }
-                popup.menu.add("Мои правки (словарь)").setOnMenuItemClickListener {
-                    val bookUri = epubBook?.uri?.toString() ?: return@setOnMenuItemClickListener true
-                    val dictEntries = highlightDb.getDictEntries(bookUri)
-                    DictionarySheet(dictEntries) { highlight ->
-                        highlightDb.deleteHighlight(highlight.id)
-                        webView.evaluateJavascript("applyHighlights('${getHighlightsJson(highlight.spineIndex)}')", null)
-                    }.show(supportFragmentManager, "dictionary")
-                    true
-                }
-                popup.menu.add("Глоссарий сервера").setOnMenuItemClickListener {
-                    val bookUri = currentBookMetadata?.uri ?: return@setOnMenuItemClickListener true
-                    val latestMetadata = LibraryProvider(this).getBooks().find { it.uri == bookUri }
-                    val glossary = latestMetadata?.serverGlossary ?: "Глоссарий пуст"
-                    ServerGlossarySheet(glossary).show(supportFragmentManager, "server_glossary")
-                    true
-                }
-                popup.menu.add("Показать API Лог").setOnMenuItemClickListener {
-                    apiLogOverlay.visibility = if (apiLogOverlay.visibility == View.VISIBLE) View.GONE else View.VISIBLE
-                    true
+                if (currentBookMetadata?.isTranslationMode == true) {
+                    popup.menu.add("My Notes").setOnMenuItemClickListener {
+                        val bookUri = epubBook?.uri?.toString() ?: return@setOnMenuItemClickListener true
+                        val dictEntries = highlightDb.getDictEntries(bookUri)
+                        DictionarySheet(dictEntries, 
+                            onDelete = { highlight ->
+                                highlightDb.deleteHighlight(highlight.id)
+                                webView.evaluateJavascript("applyHighlights('${getHighlightsJson(highlight.spineIndex)}')", null)
+                            },
+                            onEdit = { highlight ->
+                                showEditCorrectionDialog(highlight)
+                            }
+                        ).show(supportFragmentManager, "dictionary")
+                        true
+                    }
+                    popup.menu.add("Glossary").setOnMenuItemClickListener {
+                        val bookUri = currentBookMetadata?.uri ?: return@setOnMenuItemClickListener true
+                        val latestMetadata = LibraryProvider(this).getBooks().find { it.uri == bookUri }
+                        val glossary = latestMetadata?.serverGlossary ?: "{}"
+                        ServerGlossarySheet(
+                            glossaryJson = glossary,
+                            onEdit = { item -> showEditGlossaryDialog(item) },
+                            onAdd = { showAddGlossaryEntryDialog() }
+                        ).show(supportFragmentManager, "server_glossary")
+                        true
+                    }
+                    popup.menu.add("API Log").setOnMenuItemClickListener {
+                        apiLogOverlay.visibility = if (apiLogOverlay.visibility == View.VISIBLE) View.GONE else View.VISIBLE
+                        true
+                    }
+                    val apiLabel = if (settings.isProdApi) "Switch to LOCAL API" else "Switch to PROD API"
+                    popup.menu.add(apiLabel).setOnMenuItemClickListener {
+                        settings.isProdApi = !settings.isProdApi
+                        settings.save(this)
+                        
+                        // Re-init services
+                        fixService = FixService(getApiBaseUrl())
+                        epubBook?.let { book ->
+                            currentBookMetadata?.uri?.let { uri ->
+                                if (currentBookMetadata?.isTranslationMode == true) {
+                                    initTranslation(book, uri)
+                                }
+                            }
+                        }
+                        
+                        Toast.makeText(this, "API switched to ${if (settings.isProdApi) "PROD" else "LOCAL"}", Toast.LENGTH_SHORT).show()
+                        true
+                    }
                 }
                 popup.show()
                 true
@@ -1056,7 +1112,7 @@ class ReaderActivity : AppCompatActivity() {
                     try {
                         val obj = JSONObject(json)
                         val highlight = Highlight(
-                            bookUri = epubBook?.uri.toString(),
+                            bookUri = currentBookMetadata?.uri ?: epubBook?.uri.toString(),
                             spineIndex = obj.getInt("spineIndex"),
                             elementIdx = obj.getInt("elementIdx"),
                             startOffset = obj.getInt("startOffset"),
@@ -1161,7 +1217,8 @@ class ReaderActivity : AppCompatActivity() {
     }
 
     private fun getHighlightsJson(spineIndex: Int): String {
-        val list = highlightDb.getHighlights(epubBook?.uri.toString(), spineIndex)
+        val bookUri = currentBookMetadata?.uri ?: epubBook?.uri.toString()
+        val list = highlightDb.getHighlights(bookUri, spineIndex)
         val result = JSONObject()
         result.put("spineIndex", spineIndex)
         val array = JSONArray()
@@ -1239,13 +1296,14 @@ class ReaderActivity : AppCompatActivity() {
                         console.log('UniReader: Fix clicked');
                         var sel = window.getSelection();
                         var text = sel.toString();
-                        if (text) {
+                        if (text && sel.rangeCount > 0) {
                             var range = sel.getRangeAt(0);
                             
-                            // 1. Capture positioning data IMMEDIATELY
-                            var container = range.commonAncestorContainer;
-                            if (container.nodeType === 3) container = container.parentNode;
-                            var el = container.closest('[data-idx]');
+                            // 1. Find the anchor paragraph more robustly
+                            var node = range.startContainer;
+                            if (node.nodeType === 3) node = node.parentNode;
+                            var el = node.closest('[data-idx]');
+                            
                             if (el) {
                                 var idx = parseInt(el.getAttribute('data-idx'));
                                 var preRange = document.createRange();
@@ -1257,20 +1315,26 @@ class ReaderActivity : AppCompatActivity() {
                                 var sectionEl = el.closest('section');
                                 var spineIndex = sectionEl ? parseInt(sectionEl.getAttribute('data-index')) : -1;
 
-                                // 2. Get context (1000 chars before/after)
-                                var fullPreRange = document.createRange();
-                                fullPreRange.setStartBefore(document.body.firstChild);
-                                fullPreRange.setEnd(range.startContainer, range.startOffset);
-                                var preText = fullPreRange.toString();
-                                var contextLeft = preText.substring(Math.max(0, preText.length - 1000));
-                                
-                                var fullPostRange = document.createRange();
-                                fullPostRange.setStart(range.endContainer, range.endOffset);
-                                fullPostRange.setEndAfter(document.body.lastChild);
-                                var postText = fullPostRange.toString();
-                                var contextRight = postText.substring(0, 1000);
-                                
-                                var context = contextLeft + text + contextRight;
+                                // 2. Get context (resilient capture)
+                                var context = "";
+                                try {
+                                    var fullPreRange = document.createRange();
+                                    fullPreRange.setStartBefore(document.body.firstChild);
+                                    fullPreRange.setEnd(range.startContainer, range.startOffset);
+                                    var preText = fullPreRange.toString();
+                                    var contextLeft = preText.substring(Math.max(0, preText.length - 1000));
+                                    
+                                    var fullPostRange = document.createRange();
+                                    fullPostRange.setStart(range.endContainer, range.endOffset);
+                                    fullPostRange.setEndAfter(document.body.lastChild);
+                                    var postText = fullPostRange.toString();
+                                    var contextRight = postText.substring(0, 1000);
+                                    
+                                    context = contextLeft + text + contextRight;
+                                } catch(err) {
+                                    console.warn("UniReader: Context capture failed", err);
+                                    context = text; // fallback
+                                }
                                 
                                 var hotpoints = [];
                                 var fragment = range.cloneContents();
@@ -1289,8 +1353,10 @@ class ReaderActivity : AppCompatActivity() {
                                     startOffset: start,
                                     endOffset: end
                                 };
-                                console.log('UniReader: Sending fix data with positions', data);
+                                console.log('UniReader: Sending fix data', data);
                                 AndroidReader.fixText(JSON.stringify(data));
+                            } else {
+                                console.warn("UniReader: No [data-idx] found for selection start");
                             }
                             window.getSelection().removeAllRanges();
                         }
@@ -1301,11 +1367,13 @@ class ReaderActivity : AppCompatActivity() {
                         console.log('UniReader: Dict clicked');
                         var sel = window.getSelection();
                         var text = sel.toString();
-                        if (text) {
+                        if (text && sel.rangeCount > 0) {
                             var range = sel.getRangeAt(0);
-                            var container = range.commonAncestorContainer;
-                            if (container.nodeType === 3) container = container.parentNode;
-                            var el = container.closest('[data-idx]');
+                            
+                            var node = range.startContainer;
+                            if (node.nodeType === 3) node = node.parentNode;
+                            var el = node.closest('[data-idx]');
+                            
                             if (el) {
                                 var idx = parseInt(el.getAttribute('data-idx'));
                                 var preRange = document.createRange();
@@ -1359,9 +1427,11 @@ class ReaderActivity : AppCompatActivity() {
                         return;
                     }
                     var range = sel.getRangeAt(0);
-                    var container = range.commonAncestorContainer;
-                    if (container.nodeType === 3) container = container.parentNode;
-                    var el = container.closest('[data-idx]');
+                    
+                    var node = range.startContainer;
+                    if (node.nodeType === 3) node = node.parentNode;
+                    var el = node.closest('[data-idx]');
+                    
                     if (!el) {
                         console.warn('UniReader: No element with data-idx found near selection');
                         return;
@@ -1419,6 +1489,7 @@ class ReaderActivity : AppCompatActivity() {
                         var btnDict = document.getElementById('uni-dict-btn');
                         if (!btnHighlight || !btnFix || !btnDict) return;
 
+                        var isTranslationMode = ${currentBookMetadata?.isTranslationMode == true};
                         var existingMark = container.closest('.uni-highlight, .uni-fix, .uni-dict');
                         if (existingMark) {
                             btnHighlight.innerText = 'Удалить';
@@ -1429,8 +1500,8 @@ class ReaderActivity : AppCompatActivity() {
                         } else {
                             btnHighlight.innerText = 'Пометить';
                             btnHighlight.setAttribute('data-mode', 'save');
-                            btnFix.style.display = 'block';
-                            btnDict.style.display = 'block';
+                            btnFix.style.display = isTranslationMode ? 'block' : 'none';
+                            btnDict.style.display = isTranslationMode ? 'block' : 'none';
                         }
 
                         var rect = range.getBoundingClientRect();
@@ -2413,24 +2484,161 @@ class ReaderActivity : AppCompatActivity() {
         }
     }
 
+    private fun showEditCorrectionDialog(highlight: Highlight) {
+        val input = EditText(this).apply {
+            setText(highlight.replacementText?.substringAfter("]:") ?: "")
+            setPadding(48, 32, 48, 32)
+        }
+        
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
+            .setTitle("Edit Note")
+            .setView(input)
+            .setPositiveButton("Save") { _, _ ->
+                val newTranslation = input.text.toString().trim()
+                if (newTranslation.isNotEmpty()) {
+                    val updated = highlight.copy(replacementText = "[DICT_P]:$newTranslation")
+                    highlightDb.saveHighlight(updated)
+                    webView.evaluateJavascript("applyHighlights('${getHighlightsJson(highlight.spineIndex)}')", null)
+                    
+                    // Refresh sheet if open
+                    val bookUri = currentBookMetadata?.uri ?: epubBook?.uri?.toString() ?: return@setPositiveButton
+                    val dictEntries = highlightDb.getDictEntries(bookUri)
+                    (supportFragmentManager.findFragmentByTag("dictionary") as? DictionarySheet)?.refresh(dictEntries)
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun showEditGlossaryDialog(item: ServerGlossarySheet.GlossaryItem) {
+        val bookUri = currentBookMetadata?.uri ?: return
+        val latestMetadata = LibraryProvider(this).getBooks().find { it.uri == bookUri } ?: return
+        val glossaryJson = latestMetadata.serverGlossary ?: return
+        
+        val layout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(48, 32, 48, 32)
+        }
+        
+        val etTranslation = EditText(this).apply {
+            hint = "Перевод"
+            setText(item.translation)
+        }
+        
+        val etGender = EditText(this).apply {
+            hint = "Род (m/f/n)"
+            setText(item.meta ?: "")
+        }
+        
+        layout.addView(etTranslation)
+        layout.addView(etGender)
+        
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
+            .setTitle("Edit Glossary: ${item.original}")
+            .setView(layout)
+            .setPositiveButton("Save") { _, _ ->
+                val newTrans = etTranslation.text.toString().trim()
+                val newGender = etGender.text.toString().trim()
+                
+                try {
+                    val root = JSONObject(glossaryJson)
+                    val array = root.optJSONArray("glossary")
+                    if (array != null) {
+                        for (i in 0 until array.length()) {
+                            val obj = array.getJSONObject(i)
+                            if (obj.optString("original") == item.original) {
+                                obj.put("translation", newTrans)
+                                if (newGender.isEmpty()) obj.remove("gender")
+                                else obj.put("gender", newGender)
+                                break
+                            }
+                        }
+                        
+                        latestMetadata.serverGlossary = root.toString()
+                        LibraryProvider(this).addBook(latestMetadata)
+                        Toast.makeText(this, "Updated", Toast.LENGTH_SHORT).show()
+                        
+                        // Refresh sheet if open
+                        (supportFragmentManager.findFragmentByTag("server_glossary") as? ServerGlossarySheet)?.refresh(root.toString())
+                    }
+                } catch (e: Exception) {
+                    Log.e("Reader", "Error updating glossary JSON", e)
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun showAddGlossaryEntryDialog() {
+        val bookUri = currentBookMetadata?.uri ?: return
+        val latestMetadata = LibraryProvider(this).getBooks().find { it.uri == bookUri } ?: return
+        val glossaryJson = latestMetadata.serverGlossary ?: "{}"
+        
+        val layout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(48, 32, 48, 32)
+        }
+        
+        val etOriginal = EditText(this).apply { hint = "Original Term" }
+        val etTranslation = EditText(this).apply { hint = "Translation" }
+        val etGender = EditText(this).apply { hint = "Gender (m/f/n)" }
+        
+        layout.addView(etOriginal)
+        layout.addView(etTranslation)
+        layout.addView(etGender)
+        
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
+            .setTitle("Add to Glossary")
+            .setView(layout)
+            .setPositiveButton("Add") { _, _ ->
+                val original = etOriginal.text.toString().trim()
+                val translation = etTranslation.text.toString().trim()
+                val gender = etGender.text.toString().trim()
+                
+                if (original.isNotEmpty() && translation.isNotEmpty()) {
+                    try {
+                        val root = JSONObject(glossaryJson)
+                        val array = root.optJSONArray("glossary") ?: JSONArray().also { root.put("glossary", it) }
+                        
+                        val newEntry = JSONObject().apply {
+                            put("original", original)
+                            put("translation", translation)
+                            if (gender.isNotEmpty()) put("gender", gender)
+                        }
+                        array.put(newEntry)
+                        
+                        latestMetadata.serverGlossary = root.toString()
+                        LibraryProvider(this).addBook(latestMetadata)
+                        
+                        (supportFragmentManager.findFragmentByTag("server_glossary") as? ServerGlossarySheet)?.refresh(root.toString())
+                        Toast.makeText(this, "Term added", Toast.LENGTH_SHORT).show()
+                    } catch (e: Exception) {
+                        Log.e("Reader", "Error adding to glossary", e)
+                    }
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
     private fun showDictDialog(json: String) {
         try {
             val obj = JSONObject(json)
             val text = obj.getString("text")
             
             val input = EditText(this).apply {
-                hint = "Перевод для '$text'"
+                hint = "Translation for '$text'"
                 setPadding(48, 32, 48, 32)
             }
             
             com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
-                .setTitle("Добавить в словарь")
+                .setTitle("Add to Dictionary")
                 .setView(input)
-                .setPositiveButton("Сохранить") { _, _ ->
+                .setPositiveButton("Save") { _, _ ->
                     val translation = input.text.toString().trim()
                     if (translation.isNotEmpty()) {
                         val highlight = Highlight(
-                            bookUri = epubBook?.uri.toString(),
+                            bookUri = currentBookMetadata?.uri ?: epubBook?.uri.toString(),
                             spineIndex = obj.getInt("spineIndex"),
                             elementIdx = obj.getInt("elementIdx"),
                             startOffset = obj.getInt("startOffset"),
@@ -2442,7 +2650,7 @@ class ReaderActivity : AppCompatActivity() {
                         webView.evaluateJavascript("applyHighlights('${getHighlightsJson(highlight.spineIndex)}')", null)
                     }
                 }
-                .setNegativeButton("Отмена", null)
+                .setNegativeButton("Cancel", null)
                 .show()
                 
         } catch (e: Exception) {
@@ -2508,7 +2716,7 @@ class ReaderActivity : AppCompatActivity() {
         
         try {
             val highlight = Highlight(
-                bookUri = epubBook?.uri.toString(),
+                bookUri = currentBookMetadata?.uri ?: epubBook?.uri.toString(),
                 spineIndex = lastRequest.getInt("spineIndex"),
                 elementIdx = lastRequest.getInt("elementIdx"),
                 startOffset = lastRequest.getInt("startOffset"),
@@ -2532,7 +2740,7 @@ class ReaderActivity : AppCompatActivity() {
 
     private fun performSave(destinationUri: Uri) {
         val book = epubBook ?: return
-        val bookUriString = book.uri.toString()
+        val bookUriString = currentBookMetadata?.uri ?: book.uri.toString()
         val pendingFixes = highlightDb.getPendingFixes(bookUriString)
         
         if (pendingFixes.isEmpty()) {

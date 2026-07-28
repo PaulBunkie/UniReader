@@ -12,7 +12,8 @@ import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 
 class DictionarySheet(
     private val items: List<Highlight>,
-    private val onDelete: (Highlight) -> Unit
+    private val onDelete: (Highlight) -> Unit,
+    private val onEdit: (Highlight) -> Unit
 ) : BottomSheetDialogFragment() {
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View? {
@@ -22,20 +23,29 @@ class DictionarySheet(
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         
-        view.findViewById<TextView>(R.id.tvDictTitle).text = "Словарь (${items.size})"
+        view.findViewById<TextView>(R.id.tvDictTitle).text = "My Notes (${items.size})"
         
         val rv = view.findViewById<RecyclerView>(R.id.rvDict)
         rv.layoutManager = LinearLayoutManager(context)
-        rv.adapter = DictAdapter(items) { item ->
-            onDelete(item)
-            dismiss() // Close on delete for simplicity, or we could update list
-        }
+        rv.adapter = DictAdapter(items.toMutableList(), onDelete, onEdit)
+    }
+
+    fun refresh(newItems: List<Highlight>) {
+        (view?.findViewById<RecyclerView>(R.id.rvDict)?.adapter as? DictAdapter)?.update(newItems)
+        view?.findViewById<TextView>(R.id.tvDictTitle)?.text = "My Notes (${newItems.size})"
     }
 
     class DictAdapter(
-        private val items: List<Highlight>,
-        private val onDelete: (Highlight) -> Unit
+        private var items: MutableList<Highlight>,
+        private val onDelete: (Highlight) -> Unit,
+        private val onEdit: (Highlight) -> Unit
     ) : RecyclerView.Adapter<DictAdapter.ViewHolder>() {
+
+        fun update(newItems: List<Highlight>) {
+            items.clear()
+            items.addAll(newItems)
+            notifyDataSetChanged()
+        }
 
         class ViewHolder(view: View) : RecyclerView.ViewHolder(view) {
             val original: TextView = view.findViewById(R.id.tvDictOriginal)
@@ -53,6 +63,9 @@ class DictionarySheet(
             holder.original.text = item.originalText
             holder.translation.text = item.replacementText?.substringAfter("]:") ?: ""
             
+            holder.itemView.setOnClickListener {
+                onEdit(item)
+            }
             holder.btnDelete.setOnClickListener {
                 onDelete(item)
             }

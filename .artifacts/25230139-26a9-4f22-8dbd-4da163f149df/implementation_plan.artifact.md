@@ -1,49 +1,30 @@
-# Implementation Plan - Update Translation Contract to JSON Glossary
+# Implementation Plan - TOC Visuals and Matching Fixes
 
-Update the translation request/response contract to use JSON objects for the glossary and user corrections, moving away from Markdown tables.
+Improve TOC legibility in Light Mode and fix the matching logic that prevents some translated chapters from being highlighted.
 
 ## User Review Required
 
-> [!IMPORTANT]
-> **Data Migration**: Existing books with Markdown-based glossaries will have their glossaries reset to empty because the new parser expects a JSON structure. Since the glossary is re-generated and updated by the server, this should not be a critical issue for users.
+> [!NOTE]
+> I will pick a darker, more saturated orange for Light Mode to ensure it stands out against the white background while remaining consistent with the "yellow" theme of translated content.
 
 ## Proposed Changes
 
-### [Metadata Layer] BookMetadata.kt & LibraryProvider.kt
-- **`BookMetadata.kt`**: Rename `translationGuidelines` to `serverGlossary` to reflect its new JSON nature.
-- **`LibraryProvider.kt`**: Update serialization to use the key `"serverGlossary"`. Include fallback logic to read the old `"translationGuidelines"` key if the new one is missing, but treat it as null if it doesn't look like JSON.
+### [UI Components] TOCSheet.kt
+#### [MODIFY] [TOCSheet.kt](file:///C:/Users/Владелец/AndroidStudioProjects/UniReader/app/src/main/java/com/example/unireader/TOCSheet.kt)
+- Update `onBindViewHolder` to handle theme-dependent coloring.
+- Detect theme mode using `context.resources.configuration.uiMode`.
+- **Light Mode**: Use `#E65100` (Dark Orange).
+- **Dark Mode**: Use `#FBC02D` (Bright Yellow).
 
-### [Service Layer] TranslationService.kt
-- **`translateChapter`**:
-    - Change parameter `guidelines: String?` to `glossary: JSONObject?` and `userCorrections: JSONArray?`.
-    - Update request body construction:
-        ```json
-        {
-          "glossary": { ... },
-          "user_corrections": [ ... ]
-        }
-        ```
-    - Update response parsing to extract the updated `"glossary"` object and return it as a stringified JSON.
-
-### [Logic Layer] TranslationManager.kt
-- **`processTranslation`**:
-    - Parse `currentMeta.serverGlossary` into `JSONObject`.
-    - Create a helper to convert `dictEntries` (Highlights) into the expected `user_corrections` `JSONArray`.
-    - Pass these JSON structures to the updated `TranslationService`.
-- **`buildGuidelines`**: Delete this method as it's no longer needed for Markdown tables.
-
-### [UI Layer] ServerGlossarySheet.kt
-- **`onCreateView`**: Add logic to pretty-print the JSON glossary for better readability in the bottom sheet.
+### [Reader Logic] ReaderActivity.kt
+#### [MODIFY] [ReaderActivity.kt](file:///C:/Users/Владелец/AndroidStudioProjects/UniReader/app/src/main/java/com/example/unireader/ReaderActivity.kt)
+- Improve the `isTranslated` matching logic in the `action_toc` handler:
+    - Strip fragments (anything after `#`) from the TOC `href` before searching the spine.
+    - Ensure robust matching even with different path prefixes.
 
 ## Verification Plan
 
 ### Manual Verification
-1. **Logcat Monitoring**:
-    - Filter by `TranslationService` and `TranslationManager`.
-    - Verify that the outbound JSON has the correct `glossary` and `user_corrections` fields.
-    - Verify that `user_corrections` contains the words added to the local dictionary.
-2. **Glossary Verification**:
-    - Open "Глоссарий сервера" in the reader menu.
-    - Verify it displays the JSON glossary returned by the server in a readable format.
-3. **Translation Success**:
-    - Verify that the chapter text is correctly translated using the provided glossary/corrections.
+1.  **Light Mode Test**: Switch to Light Mode, open TOC. Verify translated chapters use a darker, legible orange.
+2.  **Matching Test**: Verify that chapters with anchors in TOC (like `part0005.xhtml#anchor`) are now correctly identified as translated if their corresponding spine item is ready.
+3.  **Cross-Check**: Compare TOC highlights with the actual translation status of chapters.

@@ -19,7 +19,8 @@ data class ReaderSettings(
     var isDarkMode: Boolean = false,
     var isPagedMode: Boolean = true,
     var isFullscreen: Boolean = false,
-    var brightness: Float = -1.0f
+    var brightness: Float = -1.0f,
+    var isProdApi: Boolean = false
 ) {
     companion object {
         private const val PREFS_NAME = "reader_settings"
@@ -41,7 +42,8 @@ data class ReaderSettings(
                 isDarkMode = prefs.getBoolean("isDarkMode", false),
                 isPagedMode = prefs.getBoolean("isPagedMode", true),
                 isFullscreen = prefs.getBoolean("isFullscreen", false),
-                brightness = prefs.getFloat("brightness", -1.0f)
+                brightness = prefs.getFloat("brightness", -1.0f),
+                isProdApi = prefs.getBoolean("isProdApi", false)
             )
         }
     }
@@ -64,6 +66,7 @@ data class ReaderSettings(
             putBoolean("isPagedMode", isPagedMode)
             putBoolean("isFullscreen", isFullscreen)
             putFloat("brightness", brightness)
+            putBoolean("isProdApi", isProdApi)
         }
     }
 }

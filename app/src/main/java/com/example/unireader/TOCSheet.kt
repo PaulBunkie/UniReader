@@ -15,6 +15,7 @@ import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 class TOCSheet(
     private val toc: List<TocItem>,
     private val currentHref: String?,
+    private val isTranslated: (String) -> Boolean,
     private val onItemClick: (String) -> Unit
 ) : BottomSheetDialogFragment() {
 
@@ -27,7 +28,7 @@ class TOCSheet(
         
         val rv = view.findViewById<RecyclerView>(R.id.rvToc)
         rv.layoutManager = LinearLayoutManager(context)
-        val adapter = TocAdapter(toc, currentHref) { href ->
+        val adapter = TocAdapter(toc, currentHref, isTranslated) { href ->
             onItemClick(href)
             dismiss()
         }
@@ -41,6 +42,7 @@ class TOCSheet(
     class TocAdapter(
         private val items: List<TocItem>,
         private val currentHref: String?,
+        private val isTranslated: (String) -> Boolean,
         private val onClick: (String) -> Unit
     ) : RecyclerView.Adapter<TocAdapter.ViewHolder>() {
 
@@ -69,6 +71,8 @@ class TOCSheet(
             val item = items[position]
             holder.title.text = item.title
             
+            val translated = isTranslated(item.href)
+            
             if (position == selectedIndex) {
                 holder.title.setTypeface(null, Typeface.BOLD)
                 val typedValue = TypedValue()
@@ -77,6 +81,16 @@ class TOCSheet(
             } else {
                 holder.title.setTypeface(null, Typeface.NORMAL)
                 holder.itemView.setBackgroundColor(Color.TRANSPARENT)
+            }
+
+            if (translated) {
+                val isDarkMode = (holder.itemView.context.resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) == android.content.res.Configuration.UI_MODE_NIGHT_YES
+                val color = if (isDarkMode) Color.parseColor("#FBC02D") else Color.parseColor("#E65100")
+                holder.title.setTextColor(color)
+            } else {
+                val typedValue = TypedValue()
+                holder.itemView.context.theme.resolveAttribute(com.google.android.material.R.attr.colorOnSurface, typedValue, true)
+                holder.title.setTextColor(typedValue.data)
             }
 
             holder.itemView.setOnClickListener { onClick(item.href) }

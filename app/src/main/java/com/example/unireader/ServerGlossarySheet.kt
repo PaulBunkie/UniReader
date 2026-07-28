@@ -11,7 +11,9 @@ import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import org.json.JSONObject
 
 class ServerGlossarySheet(
-    private val glossaryJson: String
+    private val glossaryJson: String,
+    private val onEdit: (GlossaryItem) -> Unit,
+    private val onAdd: () -> Unit
 ) : BottomSheetDialogFragment() {
 
     data class GlossaryItem(val original: String, val translation: String, val meta: String?)
@@ -22,9 +24,16 @@ class ServerGlossarySheet(
         val items = parseGlossary(glossaryJson)
         val rv = view.findViewById<RecyclerView>(R.id.rvGlossary)
         rv.layoutManager = LinearLayoutManager(context)
-        rv.adapter = GlossaryAdapter(items)
+        rv.adapter = GlossaryAdapter(items.toMutableList(), onEdit)
+        
+        view.findViewById<View>(R.id.btnGlossaryAdd).setOnClickListener { onAdd() }
         
         return view
+    }
+
+    fun refresh(newJson: String) {
+        val newItems = parseGlossary(newJson)
+        (view?.findViewById<RecyclerView>(R.id.rvGlossary)?.adapter as? GlossaryAdapter)?.update(newItems)
     }
 
     private fun parseGlossary(json: String): List<GlossaryItem> {
@@ -47,7 +56,17 @@ class ServerGlossarySheet(
         return list
     }
 
-    class GlossaryAdapter(private val items: List<GlossaryItem>) : RecyclerView.Adapter<GlossaryAdapter.ViewHolder>() {
+    class GlossaryAdapter(
+        private val items: MutableList<GlossaryItem>,
+        private val onEdit: (GlossaryItem) -> Unit
+    ) : RecyclerView.Adapter<GlossaryAdapter.ViewHolder>() {
+        
+        fun update(newItems: List<GlossaryItem>) {
+            items.clear()
+            items.addAll(newItems)
+            notifyDataSetChanged()
+        }
+
         class ViewHolder(view: View) : RecyclerView.ViewHolder(view) {
             val tvOriginal: TextView = view.findViewById(R.id.tvServerOriginal)
             val tvTranslation: TextView = view.findViewById(R.id.tvServerTranslation)
@@ -64,6 +83,7 @@ class ServerGlossarySheet(
             holder.tvOriginal.text = item.original
             holder.tvTranslation.text = item.translation
             holder.tvMeta.text = item.meta
+            holder.itemView.setOnClickListener { onEdit(item) }
         }
 
         override fun getItemCount() = items.size

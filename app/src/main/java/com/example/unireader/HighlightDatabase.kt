@@ -71,6 +71,7 @@ class HighlightDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_N
     fun saveHighlight(highlight: Highlight): Long {
         val db = writableDatabase
         val values = ContentValues().apply {
+            if (highlight.id != 0L) put(COLUMN_ID, highlight.id)
             put(COLUMN_BOOK_URI, highlight.bookUri)
             put(COLUMN_SPINE_INDEX, highlight.spineIndex)
             put(COLUMN_ELEMENT_IDX, highlight.elementIdx)
@@ -80,7 +81,7 @@ class HighlightDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_N
             put(COLUMN_REPLACEMENT_TEXT, highlight.replacementText)
             put(COLUMN_COLOR, highlight.color)
         }
-        return db.insert(TABLE_HIGHLIGHTS, null, values)
+        return db.replace(TABLE_HIGHLIGHTS, null, values)
     }
 
     fun deleteHighlight(id: Long) {
