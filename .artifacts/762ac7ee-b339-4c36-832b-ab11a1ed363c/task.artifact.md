@@ -1,4 +1,3 @@
-- [x] Update `onChapterEntered` to only reload in paged mode.
-- [x] Fix base URL in `initSeamlessScroll`.
-- [ ] Verify seamless scroll continuity in the app.
-- [ ] Verify paged mode translation updates still work.
+- [ ] Unified paragraph/div styles in `applyCurrentSettings()`.
+- [ ] Updated `updateWebViewPadding()` to refresh CSS in all modes.
+- [ ] Verified consistency between paged and seamless modes.

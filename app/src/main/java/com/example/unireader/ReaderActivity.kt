@@ -693,10 +693,7 @@ class ReaderActivity : AppCompatActivity() {
         val pb = (settings.paddingBottom * density).toInt()
         
         webViewContainer.setPadding(pl, pt, pr, pb)
-        
-        if (isPagedMode) {
-            applyCurrentSettings()
-        }
+        applyCurrentSettings()
     }
 
     fun applyCurrentSettings() {
@@ -743,11 +740,20 @@ class ReaderActivity : AppCompatActivity() {
             #uni-selection-menu {
                 position: fixed; background: $menuBg !important; border: none !important;
                 border-radius: 20px !important; display: none; z-index: 2147483647 !important;
-                box-shadow: 0 4px 12px rgba(0,0,0,0.4) !important; flex-direction: row; overflow: hidden;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.4) !important; 
+                flex-direction: row; align-items: stretch; justify-content: center;
+                overflow: hidden; white-space: nowrap; padding: 0 !important; margin: 0 !important;
+                line-height: normal !important; min-width: max-content !important;
+                box-sizing: border-box !important;
             }
             .uni-menu-btn {
-                background: none !important; border: none !important; color: white !important;
-                padding: 10px 16px !important; font-size: 14px !important; font-weight: bold !important; cursor: pointer !important;
+                background: transparent !important; border: none !important; color: white !important;
+                padding: 10px 16px !important; font-size: 14px !important; font-weight: bold !important; 
+                cursor: pointer !important; flex: 0 0 auto !important; margin: 0 !important;
+                height: auto !important; line-height: 1.2 !important; outline: none !important;
+                box-shadow: none !important; -webkit-appearance: none !important;
+                text-transform: none !important; box-sizing: border-box !important;
+                display: flex !important; align-items: center !important; justify-content: center !important;
             }
             .uni-menu-btn:not(:last-child) { border-right: 1px solid rgba(255,255,255,0.3) !important; }
             
@@ -792,7 +798,6 @@ class ReaderActivity : AppCompatActivity() {
                 -webkit-column-width: 100vw !important; -webkit-column-gap: 0 !important;
                 column-width: 100vw !important; column-gap: 0 !important;
                 -webkit-column-fill: auto; column-fill: auto;
-                /* Alignment fix: ensure container height is a multiple of line-height to avoid cut lines */
                 padding-bottom: calc(100vh % ${lhPx}px) !important;
             }
             section {
@@ -800,13 +805,9 @@ class ReaderActivity : AppCompatActivity() {
                 break-before: column;
                 -webkit-column-break-before: column;
             }
-            p, h1, h2, h3, h4, h5, h6, li { 
+            p, div, h1, h2, h3, h4, h5, h6, li { 
                 margin: 0 !important;
                 padding: 0 ${halfGapPx}px ${settings.paragraphSpacing * lh}em ${halfGapPx}px !important; 
-            }
-            div {
-                margin: 0 !important;
-                padding: 0 ${halfGapPx}px 0 ${halfGapPx}px !important;
             }
             #snap-ribbon {
                 position: absolute; top: 0; left: 0;
@@ -827,8 +828,8 @@ class ReaderActivity : AppCompatActivity() {
                 visibility: visible;
                 display: block !important;
             } 
-            p, h1, h2, h3, h4, h5, h6, li { 
-                margin-top: 0; 
+            p, div, h1, h2, h3, h4, h5, h6, li { 
+                margin: 0 !important; 
                 margin-bottom: ${settings.paragraphSpacing * lh}em !important; 
                 padding-left: ${halfGapPx}px !important;
                 padding-right: ${halfGapPx}px !important;
@@ -1056,12 +1057,11 @@ class ReaderActivity : AppCompatActivity() {
             @Suppress("unused")
             fun onChapterEntered(index: Int) {
                 runOnUiThread {
-                    Log.d("Reader", "onChapterEntered: index=$index, current=$currentSpineIndex, isJumping=$isJumpingToChapter, isSwipeBlocked=$isSwipeBlocked")
                     if (isJumpingToChapter || isSwipeBlocked) return@runOnUiThread
                     
                     if (currentSpineIndex != index) {
                         if (isPagedMode && currentBookMetadata?.isTranslationMode == true) {
-                            // In paged mode, we still want the delayed reload to pick up fresh translations.
+                            // Paged mode: reload to pick up translations.
                             mainHandler.removeCallbacks(reloadChapterRunnable)
                             pendingReloadJumpToLast = index < currentSpineIndex
                             pendingReloadIndex = index
@@ -1071,14 +1071,11 @@ class ReaderActivity : AppCompatActivity() {
                             return@runOnUiThread
                         }
 
-                        // For seamless scroll (or non-translation mode), restore truly seamless transition.
+                        // Seamless or non-translation: pure update.
                         currentSpineIndex = index
                         updateChapterTitle()
                         saveReadingPosition()
-                        
-                        // Notify Manager
                         translationManager?.onChapterVisible(index)
-                        
                         webView.evaluateJavascript("applyHighlights('${getHighlightsJson(index)}')", null)
                     }
                 }
@@ -1196,6 +1193,8 @@ class ReaderActivity : AppCompatActivity() {
                 injectIndexingScript()
                 if (isPagedMode) {
                     loadInitialPagedChapters()
+                } else {
+                    loadInitialSeamlessChapters()
                 }
                 
                 webView.evaluateJavascript("applyHighlights('${getHighlightsJson(currentSpineIndex)}')", null)
@@ -1253,12 +1252,6 @@ class ReaderActivity : AppCompatActivity() {
     private fun injectIndexingScript() {
         val js = """
             (function() {
-                if (!document.getElementById('uni-highlight-style')) {
-                    var style = document.createElement('style');
-                    style.id = 'uni-highlight-style';
-                    document.head.appendChild(style);
-                }
-                
                 var menu = document.getElementById('uni-selection-menu');
                 if (!menu) {
                     menu = document.createElement('div');
@@ -1450,7 +1443,7 @@ class ReaderActivity : AppCompatActivity() {
 
                         if (rect.width > 0 && rect.height > 0) {
                             menu.style.display = 'flex';
-                            var mw = menu.offsetWidth || 200, mh = menu.offsetHeight || 40;
+                            var mw = menu.scrollWidth || 200, mh = menu.scrollHeight || 40;
                             var left = Math.max(10, Math.min(window.innerWidth - mw - 10, rect.left + rect.width/2 - mw/2));
                             var top = rect.top - mh - 20;
                             if (top < 10) top = rect.bottom + 20;
@@ -1681,8 +1674,12 @@ class ReaderActivity : AppCompatActivity() {
 
                     window.addEventListener('scroll', function() {
                         var pw = document.documentElement.getBoundingClientRect().width, sl = window.pageXOffset;
+                        var mid = pw / 2;
                         var sections = [...document.querySelectorAll('section')];
-                        var active = sections.find(s => { var r = s.getBoundingClientRect(); return r.left <= 20 && r.right > 20; });
+                        var active = sections.find(s => { 
+                            var r = s.getBoundingClientRect(); 
+                            return r.left < mid && r.right > mid; 
+                        });
 
                         if (active) {
                             var sectionStart = active.offsetLeft;
@@ -1893,9 +1890,11 @@ class ReaderActivity : AppCompatActivity() {
                     }, { threshold: 0.1 });
                     
                     window.addEventListener('scroll', function() {
-                        var active = [...document.querySelectorAll('section')].find(s => {
+                        var sections = [...document.querySelectorAll('section')];
+                        var mid = window.innerHeight / 2;
+                        var active = sections.find(s => {
                             var r = s.getBoundingClientRect();
-                            return r.top <= 150 && r.bottom > 150;
+                            return r.top < mid && r.bottom > mid;
                         });
                         if (active) AndroidReader.onChapterEntered(parseInt(active.getAttribute('data-index')));
                     });
@@ -1978,26 +1977,27 @@ class ReaderActivity : AppCompatActivity() {
         isChapterLoading = false
         isJumpingToChapter = true
         
+        pendingElementIndex = -1
+        pendingCharOffset = -1
+        
+        webView.loadDataWithBaseURL("epub://reader/", html, "text/html", "UTF-8", null)
+    }
+
+    private fun loadInitialSeamlessChapters() {
         val useCache = lastKnownPosition != null && lastKnownPosition?.first == currentSpineIndex
         val finalPos = if (useCache) lastKnownPosition!! else Triple(currentSpineIndex, pendingElementIndex, pendingCharOffset)
         
         val idxToUse = finalPos.second
         val offsetToUse = finalPos.third
         
-        pendingElementIndex = -1
-        pendingCharOffset = -1
-        
-        webView.loadDataWithBaseURL("epub://reader/", html, "text/html", "UTF-8", null)
-        
-        webView.postDelayed({
-            loadAndAppendChapter(finalPos.first, idxToUse, offsetToUse) {
-                loadAndPrependChapter(finalPos.first - 1, stayOnCurrent = true) {
-                    loadAndAppendChapter(finalPos.first + 1, stickToCurrent = true) {
-                        isJumpingToChapter = false
-                    }
+        isJumpingToChapter = true
+        loadAndAppendChapter(finalPos.first, idxToUse, offsetToUse) {
+            loadAndPrependChapter(finalPos.first - 1, stayOnCurrent = true) {
+                loadAndAppendChapter(finalPos.first + 1, stickToCurrent = true) {
+                    isJumpingToChapter = false
                 }
             }
-        }, 500)
+        }
     }
 
     private fun loadAndAppendChapter(
