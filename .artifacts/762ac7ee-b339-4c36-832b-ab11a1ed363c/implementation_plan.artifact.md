@@ -1,36 +1,36 @@
-# Implementation Plan - Simplified Translation Update via Container Refresh
+# Implementation Plan - JavaScript Cleanup and Optimization
 
-This plan implements a simplified approach to ensuring translations are always up-to-date in the reader. Instead of granular DOM updates, we will trigger a full container refresh whenever the user navigates to a new chapter in translation mode.
+This plan focuses on cleaning up the accumulated "noise" (crap) in the JavaScript injected into the WebView, while preserving the core paging and alignment logic.
 
 ## Proposed Changes
 
-### [Component] ReaderActivity
+### [Component] ReaderActivity (JavaScript Injection)
 
 #### [MODIFY] [ReaderActivity.kt](file:///C:/Users/Владелец/AndroidStudioProjects/UniReader/app/src/main/java/com/example/unireader/ReaderActivity.kt)
 
-1.  **Refine `onChapterEntered`**:
-    *   When the detected chapter index changes (`currentSpineIndex != index`):
-    *   If the book is in **Translation Mode**:
-        *   Determine scroll direction: `val jumpToLast = index < currentSpineIndex`.
-        *   Immediately call `loadSpineItem(index, jumpToLast)`.
-        *   This will reload the WebView, clearing the container and re-fetching the current chapter and its neighbors from the disk (ensuring any recently completed translations are picked up).
-        *   If `jumpToLast` is true (scrolling backward), it will land the user on the last page of the previous chapter.
-        *   If `jumpToLast` is false (scrolling forward), it will land the user on the first page of the next chapter.
-    *   If NOT in translation mode, continue with the existing seamless transition (just update title, position, and highlights).
+1.  **Clean up `injectIndexingScript()`**:
+    *   Remove all `console.log` and `console.warn` statements (except for critical errors).
+    *   Streamline the selection menu and highlight logic (remove redundant lookups).
+    *   Simplify context capture logic.
+2.  **Optimize `initPagedView()`**:
+    *   Remove `console.log`.
+    *   Simplify the `scroll` listener. Instead of a complex loop for `active` section, use a more efficient approach (e.g., checking `window.pageXOffset`).
+    *   Streamline `appendChapter` and `prependChapter`. Remove the polling `syncIdxScroll` if possible, or make it more robust/less verbose.
+    *   Remove the `while (container.children.length > 3)` logic if we decide to rely more on the new container refresh strategy (though it's still useful for non-translation mode).
+3.  **Optimize `initSeamlessScroll()`**:
+    *   Remove `console.log`.
+    *   Simplify sentinel logic.
+4.  **Ensure Line Alignment**:
+    *   Verify if "align by lines" refers to the horizontal snapping to `100vw`.
+    *   Optionally add a CSS rule in `applyCurrentSettings` to ensure vertical alignment of lines (making page height a multiple of `line-height`) if it's missing.
 
 ## Verification Plan
 
 ### Manual Verification
-1.  **Forward Update**:
-    *   Open a book in translation mode.
-    *   Be on Chapter 1 (Translated). Scroll down to see Chapter 2 (Original).
-    *   Wait for Chapter 2 to finish translating.
-    *   Scroll until Chapter 2 becomes active.
-    *   **Verify**: WebView refreshes, and Chapter 2 is now Translated.
-2.  **Backward Update**:
-    *   Be on Chapter 2. Scroll up to see Chapter 1.
-    *   Scroll until Chapter 1 becomes active.
-    *   **Verify**: WebView refreshes, and we land at the end of Chapter 1.
+1.  Verify that paging still works exactly as before (snapping to pages).
+2.  Verify that highlights, fixes, and dictionary work without errors.
+3.  Check Logcat to ensure the "noise" (console logs) is gone.
+4.  Ensure navigation (TOC, internal links) still lands in the right place.
 
 ### Automated Tests
 *   N/A

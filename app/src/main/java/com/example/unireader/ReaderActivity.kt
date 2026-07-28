@@ -694,7 +694,6 @@ class ReaderActivity : AppCompatActivity() {
         val bgColor = if (isDarkMode) "#000000" else "#FFFFFF"
         val textColor = if (isDarkMode) "#E0E0E0" else "#000000"
         
-        // Theme specific colors for UI elements
         val menuBg = if (isDarkMode) "#1976D2" else "#2196F3"
         val tooltipBg = if (isDarkMode) "#2C2C2C" else "#FFFFFF"
         val tooltipText = if (isDarkMode) "#E0E0E0" else "#333333"
@@ -703,11 +702,15 @@ class ReaderActivity : AppCompatActivity() {
         webView.setBackgroundColor(if (isDarkMode) 0xFF000000.toInt() else 0xFFFFFFFF.toInt())
         findViewById<CoordinatorLayout>(R.id.readerRoot)?.setBackgroundColor(if (isDarkMode) 0xFF000000.toInt() else 0xFFFFFFFF.toInt())
 
+        val lh = settings.lineHeight
+        val fs = settings.fontSize
+        val lhPx = fs * lh
+
         val commonCss = """
             body { 
-                line-height: ${settings.lineHeight}; 
+                line-height: $lh; 
                 font-family: sans-serif; 
-                font-size: ${settings.fontSize}px;
+                font-size: ${fs}px;
                 text-align: justify;
                 hyphens: auto;
                 word-wrap: break-word;
@@ -723,56 +726,28 @@ class ReaderActivity : AppCompatActivity() {
                 box-sizing: border-box;
                 color: $textColor !important;
             }
-            p {
-                text-indent: ${settings.firstLineIndent}em;
-            }
+            p { text-indent: ${settings.firstLineIndent}em; }
             * { max-width: 100% !important; box-sizing: border-box !important; }
             img { display: block; max-width: 100% !important; max-height: 80vh !important; margin: 10px auto !important; object-fit: contain; }
             
-            /* Highlights and UI Elements */
             #uni-selection-menu {
-                position: fixed;
-                background: $menuBg !important;
-                border: none !important;
-                border-radius: 20px !important;
-                display: none;
-                z-index: 2147483647 !important;
-                box-shadow: 0 4px 12px rgba(0,0,0,0.4) !important;
-                flex-direction: row;
-                overflow: hidden;
+                position: fixed; background: $menuBg !important; border: none !important;
+                border-radius: 20px !important; display: none; z-index: 2147483647 !important;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.4) !important; flex-direction: row; overflow: hidden;
             }
             .uni-menu-btn {
-                background: none !important;
-                border: none !important;
-                color: white !important;
-                padding: 10px 16px !important;
-                font-size: 14px !important;
-                font-weight: bold !important;
-                cursor: pointer !important;
+                background: none !important; border: none !important; color: white !important;
+                padding: 10px 16px !important; font-size: 14px !important; font-weight: bold !important; cursor: pointer !important;
             }
-            .uni-menu-btn:not(:last-child) {
-                border-right: 1px solid rgba(255,255,255,0.3) !important;
-            }
+            .uni-menu-btn:not(:last-child) { border-right: 1px solid rgba(255,255,255,0.3) !important; }
             
             #uni-fix-tooltip {
-                position: fixed;
-                background: $tooltipBg !important;
-                color: $tooltipText !important;
-                border: 1px solid $tooltipBorder !important;
-                border-radius: 8px !important;
-                padding: 12px !important;
-                font-size: 14px !important;
-                z-index: 2147483647 !important;
-                box-shadow: 0 4px 12px rgba(0,0,0,0.3) !important;
-                max-width: 80% !important;
-                line-height: 1.4 !important;
-                display: none;
+                position: fixed; background: $tooltipBg !important; color: $tooltipText !important;
+                border: 1px solid $tooltipBorder !important; border-radius: 8px !important;
+                padding: 12px !important; font-size: 14px !important; z-index: 2147483647 !important;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.3) !important; max-width: 80% !important; line-height: 1.4 !important; display: none;
             }
-            #uni-fix-tooltip b {
-                color: ${if (isDarkMode) "#81C784" else "#2E7D32"};
-                display: block;
-                margin-bottom: 4px;
-            }
+            #uni-fix-tooltip b { color: ${if (isDarkMode) "#81C784" else "#2E7D32"}; display: block; margin-bottom: 4px; }
             
             mark.uni-highlight {
                 background-color: ${if (isDarkMode) "#f57f17" else "#ffeb3b"} !important;
@@ -807,6 +782,8 @@ class ReaderActivity : AppCompatActivity() {
                 -webkit-column-width: 100vw !important; -webkit-column-gap: 0 !important;
                 column-width: 100vw !important; column-gap: 0 !important;
                 -webkit-column-fill: auto; column-fill: auto;
+                /* Alignment fix: ensure container height is a multiple of line-height to avoid cut lines */
+                padding-bottom: calc(100vh % ${lhPx}px) !important;
             }
             section {
                 display: block;
@@ -815,7 +792,7 @@ class ReaderActivity : AppCompatActivity() {
             }
             p, h1, h2, h3, h4, h5, h6, li { 
                 margin: 0 !important;
-                padding: 0 ${halfGapPx}px ${1.2 * settings.paragraphSpacing}em ${halfGapPx}px !important; 
+                padding: 0 ${halfGapPx}px ${settings.paragraphSpacing * lh}em ${halfGapPx}px !important; 
             }
             div {
                 margin: 0 !important;
@@ -842,7 +819,7 @@ class ReaderActivity : AppCompatActivity() {
             } 
             p, h1, h2, h3, h4, h5, h6, li { 
                 margin-top: 0; 
-                margin-bottom: ${settings.paragraphSpacing}em !important; 
+                margin-bottom: ${settings.paragraphSpacing * lh}em !important; 
                 padding-left: ${halfGapPx}px !important;
                 padding-right: ${halfGapPx}px !important;
             }
@@ -1262,9 +1239,6 @@ class ReaderActivity : AppCompatActivity() {
     private fun injectIndexingScript() {
         val js = """
             (function() {
-                console.log('UniReader: Injecting script');
-                
-                // Styles are now injected via applyCurrentSettings/reader-style
                 if (!document.getElementById('uni-highlight-style')) {
                     var style = document.createElement('style');
                     style.id = 'uni-highlight-style';
@@ -1277,32 +1251,28 @@ class ReaderActivity : AppCompatActivity() {
                     menu.id = 'uni-selection-menu';
                     
                     var btnHighlight = document.createElement('button');
-                    btnHighlight.id = 'uni-highlight-btn';
                     btnHighlight.className = 'uni-menu-btn';
+                    btnHighlight.id = 'uni-highlight-btn';
                     btnHighlight.innerText = '${getString(R.string.selection_highlight)}';
                     menu.appendChild(btnHighlight);
                     
                     var btnFix = document.createElement('button');
-                    btnFix.id = 'uni-fix-btn';
                     btnFix.className = 'uni-menu-btn';
+                    btnFix.id = 'uni-fix-btn';
                     btnFix.innerText = '${getString(R.string.selection_fix)}';
                     menu.appendChild(btnFix);
                     
                     var btnDict = document.createElement('button');
-                    btnDict.id = 'uni-dict-btn';
                     btnDict.className = 'uni-menu-btn';
+                    btnDict.id = 'uni-dict-btn';
                     btnDict.innerText = '${getString(R.string.selection_dict)}';
                     menu.appendChild(btnDict);
                     
                     document.body.appendChild(menu);
                     
-                    menu.onmousedown = function(e) {
-                        e.preventDefault();
-                        e.stopPropagation();
-                    };
+                    menu.onmousedown = function(e) { e.preventDefault(); e.stopPropagation(); };
                     
-                    btnHighlight.onclick = function(e) {
-                        console.log('UniReader: Highlight clicked');
+                    btnHighlight.onclick = function() {
                         if (this.getAttribute('data-mode') === 'delete') {
                             var id = this.getAttribute('data-target-id');
                             if (id) AndroidReader.deleteHighlight(id);
@@ -1312,14 +1282,11 @@ class ReaderActivity : AppCompatActivity() {
                         }
                     };
                     
-                    btnFix.onclick = function(e) {
-                        console.log('UniReader: Fix clicked');
+                    btnFix.onclick = function() {
                         var sel = window.getSelection();
                         var text = sel.toString();
                         if (text && sel.rangeCount > 0) {
                             var range = sel.getRangeAt(0);
-                            
-                            // 1. Find the anchor paragraph more robustly
                             var node = range.startContainer;
                             if (node.nodeType === 3) node = node.parentNode;
                             var el = node.closest('[data-idx]');
@@ -1330,12 +1297,10 @@ class ReaderActivity : AppCompatActivity() {
                                 preRange.selectNodeContents(el);
                                 preRange.setEnd(range.startContainer, range.startOffset);
                                 var start = preRange.toString().length;
-                                var end = start + text.length;
                                 
                                 var sectionEl = el.closest('section');
                                 var spineIndex = sectionEl ? parseInt(sectionEl.getAttribute('data-index')) : -1;
 
-                                // 2. Get context (resilient capture)
                                 var context = "";
                                 try {
                                     var fullPreRange = document.createRange();
@@ -1351,69 +1316,46 @@ class ReaderActivity : AppCompatActivity() {
                                     var contextRight = postText.substring(0, 1000);
                                     
                                     context = contextLeft + text + contextRight;
-                                } catch(err) {
-                                    console.warn("UniReader: Context capture failed", err);
-                                    context = text; // fallback
-                                }
+                                } catch(err) { context = text; }
                                 
                                 var hotpoints = [];
                                 var fragment = range.cloneContents();
                                 var tempDiv = document.createElement('div');
                                 tempDiv.appendChild(fragment);
-                                tempDiv.querySelectorAll('.uni-highlight').forEach(h => {
-                                    hotpoints.push(h.innerText);
-                                });
+                                tempDiv.querySelectorAll('.uni-highlight').forEach(h => hotpoints.push(h.innerText));
 
-                                var data = {
-                                    text: text,
-                                    context: context,
-                                    hotpoints: hotpoints,
-                                    spineIndex: spineIndex,
-                                    elementIdx: idx,
-                                    startOffset: start,
-                                    endOffset: end
-                                };
-                                console.log('UniReader: Sending fix data', data);
-                                AndroidReader.fixText(JSON.stringify(data));
-                            } else {
-                                console.warn("UniReader: No [data-idx] found for selection start");
+                                AndroidReader.fixText(JSON.stringify({
+                                    text: text, context: context, hotpoints: hotpoints,
+                                    spineIndex: spineIndex, elementIdx: idx,
+                                    startOffset: start, endOffset: start + text.length
+                                }));
                             }
                             window.getSelection().removeAllRanges();
                         }
                         menu.style.display = 'none';
                     };
                     
-                    btnDict.onclick = function(e) {
-                        console.log('UniReader: Dict clicked');
+                    btnDict.onclick = function() {
                         var sel = window.getSelection();
                         var text = sel.toString();
                         if (text && sel.rangeCount > 0) {
                             var range = sel.getRangeAt(0);
-                            
                             var node = range.startContainer;
                             if (node.nodeType === 3) node = node.parentNode;
                             var el = node.closest('[data-idx]');
-                            
                             if (el) {
                                 var idx = parseInt(el.getAttribute('data-idx'));
                                 var preRange = document.createRange();
                                 preRange.selectNodeContents(el);
                                 preRange.setEnd(range.startContainer, range.startOffset);
                                 var start = preRange.toString().length;
-                                var end = start + text.length;
-                                
                                 var sectionEl = el.closest('section');
                                 var spineIndex = sectionEl ? parseInt(sectionEl.getAttribute('data-index')) : -1;
 
-                                var data = {
-                                    text: text,
-                                    spineIndex: spineIndex,
-                                    elementIdx: idx,
-                                    startOffset: start,
-                                    endOffset: end
-                                };
-                                console.log('UniReader: Sending dict data', data);
-                                AndroidReader.addToDictionary(JSON.stringify(data));
+                                AndroidReader.addToDictionary(JSON.stringify({
+                                    text: text, spineIndex: spineIndex, elementIdx: idx,
+                                    startOffset: start, endOffset: start + text.length
+                                }));
                             }
                             window.getSelection().removeAllRanges();
                         }
@@ -1426,79 +1368,45 @@ class ReaderActivity : AppCompatActivity() {
                     tooltip = document.createElement('div');
                     tooltip.id = 'uni-fix-tooltip';
                     document.body.appendChild(tooltip);
-                    
                     document.addEventListener('mousedown', function(e) {
-                        if (tooltip.style.display === 'block' && !tooltip.contains(e.target)) {
-                            tooltip.style.display = 'none';
-                        }
+                        if (tooltip.style.display === 'block' && !tooltip.contains(e.target)) tooltip.style.display = 'none';
                     });
                 }
                 
-                var items = document.querySelectorAll('p, h1, h2, h3, h4, h5, h6, li, img');
-                for (var i=0; i<items.length; i++) {
-                    items[i].setAttribute('data-idx', i);
-                }
+                document.querySelectorAll('p, h1, h2, h3, h4, h5, h6, li, img').forEach((item, i) => item.setAttribute('data-idx', i));
                 
                 window.getSelectionDetails = function(isReplacement, replacementText) {
-                    console.log('UniReader: getSelectionDetails called', {isReplacement, replacementText});
                     var sel = window.getSelection();
-                    if (sel.rangeCount === 0) {
-                        console.warn('UniReader: No selection range found');
-                        return;
-                    }
+                    if (sel.rangeCount === 0) return;
                     var range = sel.getRangeAt(0);
-                    
                     var node = range.startContainer;
                     if (node.nodeType === 3) node = node.parentNode;
                     var el = node.closest('[data-idx]');
-                    
-                    if (!el) {
-                        console.warn('UniReader: No element with data-idx found near selection');
-                        return;
-                    }
+                    if (!el) return;
                     
                     var idx = parseInt(el.getAttribute('data-idx'));
                     var preRange = document.createRange();
                     preRange.selectNodeContents(el);
                     preRange.setEnd(range.startContainer, range.startOffset);
                     var start = preRange.toString().length;
-                    var end = start + range.toString().length;
-                    
                     var sectionEl = el.closest('section');
-                    if (!sectionEl) {
-                        console.warn('UniReader: No section found for element');
-                        return;
-                    }
+                    if (!sectionEl) return;
 
-                    var data = {
+                    AndroidReader.saveHighlight(JSON.stringify({
                         spineIndex: parseInt(sectionEl.getAttribute('data-index')),
-                        elementIdx: idx,
-                        startOffset: start,
-                        endOffset: end,
-                        text: range.toString(),
-                        replacementText: isReplacement ? replacementText : null
-                    };
-                    console.log('UniReader: Preparing to send data to Android', data);
-                    AndroidReader.saveHighlight(JSON.stringify(data));
+                        elementIdx: idx, startOffset: start, endOffset: start + range.toString().length,
+                        text: range.toString(), replacementText: isReplacement ? replacementText : null
+                    }));
                     sel.removeAllRanges();
-                    var menu = document.getElementById('uni-selection-menu');
                     if (menu) menu.style.display = 'none';
                 };
-                
-                if (window.uniSelectionListener) {
-                    document.removeEventListener('selectionchange', window.uniSelectionListener);
-                }
                 
                 window.uniSelectionListener = function() {
                     try {
                         var sel = window.getSelection();
                         var menu = document.getElementById('uni-selection-menu');
                         if (!menu) return;
-
-                        if (sel.isCollapsed || sel.rangeCount === 0) {
-                            menu.style.display = 'none';
-                            return;
-                        }
+                        if (sel.isCollapsed || sel.rangeCount === 0) { menu.style.display = 'none'; return; }
                         
                         var range = sel.getRangeAt(0);
                         var container = range.commonAncestorContainer;
@@ -1509,81 +1417,42 @@ class ReaderActivity : AppCompatActivity() {
                         var btnDict = document.getElementById('uni-dict-btn');
                         if (!btnHighlight || !btnFix || !btnDict) return;
 
-                        var isTranslationMode = ${currentBookMetadata?.isTranslationMode == true};
                         var existingMark = container.closest('.uni-highlight, .uni-fix, .uni-dict');
                         if (existingMark) {
                             btnHighlight.innerText = '${getString(R.string.selection_delete)}';
                             btnHighlight.setAttribute('data-mode', 'delete');
                             btnHighlight.setAttribute('data-target-id', existingMark.getAttribute('data-id'));
-                            btnFix.style.display = 'none';
-                            btnDict.style.display = 'none';
+                            btnFix.style.display = 'none'; btnDict.style.display = 'none';
                         } else {
                             btnHighlight.innerText = '${getString(R.string.selection_highlight)}';
                             btnHighlight.setAttribute('data-mode', 'save');
-                            btnFix.style.display = isTranslationMode ? 'block' : 'none';
-                            btnDict.style.display = isTranslationMode ? 'block' : 'none';
+                            var isTrans = ${currentBookMetadata?.isTranslationMode == true};
+                            btnFix.style.display = isTrans ? 'block' : 'none';
+                            btnDict.style.display = isTrans ? 'block' : 'none';
                         }
 
                         var rect = range.getBoundingClientRect();
-                        
-                        // Handle multi-line/complex rects
-                        if (rect.width === 0 && range.getClientRects().length > 0) {
-                            rect = range.getClientRects()[0];
-                        }
+                        if (rect.width === 0 && range.getClientRects().length > 0) rect = range.getClientRects()[0];
 
                         if (rect.width > 0 && rect.height > 0) {
                             menu.style.display = 'flex';
-                            var menuWidth = menu.offsetWidth || 200;
-                            var menuHeight = menu.offsetHeight || 40;
-                            
-                            // Center horizontally
-                            var left = rect.left + (rect.width / 2) - (menuWidth / 2);
-                            left = Math.max(10, Math.min(window.innerWidth - menuWidth - 10, left));
-                            
-                            // Position above the selection (top) with some space
-                            var top = rect.top - menuHeight - 20; 
-                            
-                            // If too close to the top edge, move it below the selection
-                            if (top < 10) {
-                                top = rect.bottom + 20;
-                            }
-                            
-                            menu.style.left = left + 'px';
-                            menu.style.top = top + 'px';
-                        } else {
-                            menu.style.display = 'none';
-                        }
-                    } catch (err) {
-                        console.error('UniReader: selectionchange error', err);
-                    }
+                            var mw = menu.offsetWidth || 200, mh = menu.offsetHeight || 40;
+                            var left = Math.max(10, Math.min(window.innerWidth - mw - 10, rect.left + rect.width/2 - mw/2));
+                            var top = rect.top - mh - 20;
+                            if (top < 10) top = rect.bottom + 20;
+                            menu.style.left = left + 'px'; menu.style.top = top + 'px';
+                        } else menu.style.display = 'none';
+                    } catch (err) {}
                 };
                 
                 document.addEventListener('selectionchange', window.uniSelectionListener);
-                
-                // Disable native context menu to be doubly sure
-                document.oncontextmenu = function(e) {
-                    if (window.getSelection().toString().length > 0) {
-                        e.preventDefault();
-                    }
-                };
+                document.oncontextmenu = function(e) { if (window.getSelection().toString().length > 0) e.preventDefault(); };
 
                 window.applyHighlights = function(json) {
-                    console.log('UniReader: Applying highlights', json);
-                    var data;
-                    try {
-                        data = JSON.parse(json);
-                    } catch(e) {
-                        console.error('UniReader: JSON parse error', e);
-                        return;
-                    }
-                    
-                    var spineIndex = data.spineIndex;
-                    var highlights = data.highlights;
-                    
-                    var section = document.querySelector('section[data-index="' + spineIndex + '"]');
+                    var data = JSON.parse(json);
+                    var section = document.querySelector('section[data-index="' + data.spineIndex + '"]');
                     if (!section) return;
 
-                    // Clear existing highlights AND fixes ONLY within this section
                     section.querySelectorAll('.uni-highlight, .uni-fix, .uni-dict').forEach(m => {
                         var p = m.parentNode;
                         while(m.firstChild) p.insertBefore(m.firstChild, m);
@@ -1591,54 +1460,29 @@ class ReaderActivity : AppCompatActivity() {
                     });
                     section.normalize();
 
-                    highlights.forEach(h => {
+                    data.highlights.forEach(h => {
                         var el = section.querySelector('[data-idx="' + h.elementIdx + '"]');
                         if (!el) return;
-                        
                         var walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, null, false);
-                        var current = 0;
-                        var startNode, startOffset, endNode, endOffset;
-                        
+                        var current = 0, startNode, startOffset, endNode, endOffset;
                         while(walker.nextNode()) {
-                            var node = walker.currentNode;
-                            var len = node.textContent.length;
-                            if (!startNode && current + len >= h.startOffset) {
-                                startNode = node;
-                                startOffset = h.startOffset - current;
-                            }
-                            if (startNode && !endNode && current + len >= h.endOffset) {
-                                endNode = node;
-                                endOffset = h.endOffset - current;
-                                break;
-                            }
+                            var node = walker.currentNode, len = node.textContent.length;
+                            if (!startNode && current + len >= h.startOffset) { startNode = node; startOffset = h.startOffset - current; }
+                            if (startNode && !endNode && current + len >= h.endOffset) { endNode = node; endOffset = h.endOffset - current; break; }
                             current += len;
                         }
-                        
                         if (startNode && endNode) {
                             var range = document.createRange();
-                            range.setStart(startNode, startOffset);
-                            range.setEnd(endNode, endOffset);
-                            
+                            range.setStart(startNode, startOffset); range.setEnd(endNode, endOffset);
                             var mark = document.createElement('mark');
                             var isDict = h.replacementText && h.replacementText.indexOf('[DICT_P]:') === 0;
                             var isFix = h.replacementText && h.replacementText.length > 0 && !isDict;
-                            
-                            var className = 'uni-highlight';
-                            if (isDict) className = 'uni-dict';
-                            else if (isFix) className = 'uni-fix';
-                            
-                            mark.setAttribute('class', className);
-                            if (className === 'uni-highlight') mark.style.backgroundColor = h.color;
+                            mark.className = isDict ? 'uni-dict' : (isFix ? 'uni-fix' : 'uni-highlight');
+                            if (mark.className === 'uni-highlight') mark.style.backgroundColor = h.color;
                             mark.setAttribute('data-id', h.id);
                             if (isFix || isDict) mark.setAttribute('data-replacement', h.replacementText);
-                            
-                            try {
-                                range.surroundContents(mark);
-                            } catch (e) {
-                                console.warn('UniReader: Complex range fallback', e);
-                                var contents = range.extractContents();
-                                mark.appendChild(contents);
-                                range.insertNode(mark);
+                            try { range.surroundContents(mark); } catch (e) {
+                                var contents = range.extractContents(); mark.appendChild(contents); range.insertNode(mark);
                             }
                         }
                     });
@@ -1647,43 +1491,31 @@ class ReaderActivity : AppCompatActivity() {
                 document.body.addEventListener('click', function(e) {
                     var fix = e.target.closest('.uni-fix, .uni-dict');
                     if (fix) {
-                        e.preventDefault();
-                        e.stopPropagation();
+                        e.preventDefault(); e.stopPropagation();
                         var replacement = fix.getAttribute('data-replacement');
                         if (replacement) {
                             var isDict = replacement.indexOf('[DICT_P]:') === 0;
-                            var cleanText = isDict ? replacement.substring(9) : replacement;
-                            
                             var rect = fix.getBoundingClientRect();
-                            tooltip.innerHTML = (isDict ? '<b>Словарь:</b>' : '<b>Исправленный вариант:</b>') + cleanText;
+                            tooltip.innerHTML = (isDict ? '<b>Словарь:</b>' : '<b>Исправленный вариант:</b>') + (isDict ? replacement.substring(9) : replacement);
                             tooltip.style.display = 'block';
-                            
-                            var tWidth = tooltip.offsetWidth;
-                            var left = rect.left + (rect.width / 2) - (tWidth / 2);
-                            left = Math.max(10, Math.min(window.innerWidth - tWidth - 10, left));
+                            var tw = tooltip.offsetWidth;
+                            var left = Math.max(10, Math.min(window.innerWidth - tw - 10, rect.left + rect.width/2 - tw/2));
                             var top = rect.top - tooltip.offsetHeight - 10;
                             if (top < 10) top = rect.bottom + 10;
-                            
-                            tooltip.style.left = left + 'px';
-                            tooltip.style.top = top + 'px';
+                            tooltip.style.left = left + 'px'; tooltip.style.top = top + 'px';
                         }
                         return;
                     }
-
                     var img = e.target.closest('img');
                     if (img && img.getAttribute('src')) {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        AndroidReader.openImage(img.getAttribute('src'));
-                        return;
+                        e.preventDefault(); e.stopPropagation();
+                        AndroidReader.openImage(img.getAttribute('src')); return;
                     }
                     var a = e.target.closest('a');
                     if (a && a.getAttribute('href')) {
                         var href = a.getAttribute('href');
                         if (href.startsWith('#') || href.indexOf('://') === -1 || href.startsWith('epub://')) {
-                            e.preventDefault();
-                            var absolute = a.href;
-                            AndroidReader.onLinkClicked(absolute);
+                            e.preventDefault(); AndroidReader.onLinkClicked(a.href);
                         }
                     }
                 }, true);
@@ -1796,7 +1628,6 @@ class ReaderActivity : AppCompatActivity() {
     }
 
     private fun initPagedView() {
-        Log.d("Reader", "initPagedView")
         val isDarkMode = settings.isDarkMode
         val bgColor = if (isDarkMode) "#000000" else "#FFFFFF"
 
@@ -1804,31 +1635,18 @@ class ReaderActivity : AppCompatActivity() {
             <!DOCTYPE html>
             <html style="background-color: $bgColor;">
             <head>
-                <style id="reader-style">
-                    mark.uni-highlight {
-                        background-color: #ffeb3b !important;
-                        color: #000 !important;
-                        border-radius: 2px;
-                    }
-                    [data-theme="dark"] mark.uni-highlight {
-                        background-color: #f57f17 !important;
-                        color: #fff !important;
-                    }
-                </style>
                 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
             </head>
             <body data-mode="paged" style="background-color: $bgColor !important; margin: 0; padding: 0;">
                 <div id="snap-ribbon"></div>
                 <div id="chapters-container"></div>
                 <script type="text/javascript">
-                    // CSS Scroll Snap markers: rebuild ribbon of snap points after content changes
                     function updateSnapMarkers() {
                         var ribbon = document.getElementById('snap-ribbon');
                         if (!ribbon) return;
-                        var totalWidth = document.documentElement.scrollWidth;
-                        var pageWidth = document.documentElement.getBoundingClientRect().width;
-                        if (pageWidth <= 0) return;
-                        var pageCount = Math.max(1, Math.round(totalWidth / pageWidth));
+                        var pw = document.documentElement.getBoundingClientRect().width;
+                        if (pw <= 0) return;
+                        var pageCount = Math.max(1, Math.round(document.documentElement.scrollWidth / pw));
                         ribbon.innerHTML = '';
                         for (var i = 0; i < pageCount; i++) {
                             var marker = document.createElement('div');
@@ -1839,272 +1657,155 @@ class ReaderActivity : AppCompatActivity() {
 
                     window.addEventListener('resize', updateSnapMarkers);
 
-                    var edgeCheckTimer = null;
-                    var isLoadingTop = false;
-                    var isLoadingBottom = false;
-                    var wasInContent = false;
-
-                    var lastReportedIdx = -1;
-                    var lastReportedPage = -1;
+                    var isLoadingTop = false, isLoadingBottom = false, wasInContent = false;
+                    var lastReportedIdx = -1, lastReportedPage = -1;
 
                     window.addEventListener('scroll', function() {
-                        var sw = document.documentElement.scrollWidth;
-                        var pw = document.documentElement.getBoundingClientRect().width;
-                        var sl = window.pageXOffset;
-
+                        var pw = document.documentElement.getBoundingClientRect().width, sl = window.pageXOffset;
                         var sections = [...document.querySelectorAll('section')];
-                        var active = null;
-                        var activeIdx = -1;
-                        
-                        for (var i = 0; i < sections.length; i++) {
-                            var r = sections[i].getBoundingClientRect();
-                            if (r.left <= 20 && r.right > 20) {
-                                active = sections[i];
-                                activeIdx = i;
-                                break;
-                            }
-                        }
+                        var active = sections.find(s => { var r = s.getBoundingClientRect(); return r.left <= 20 && r.right > 20; });
 
                         if (active) {
                             var sectionStart = active.offsetLeft;
-                            var sectionWidth = (activeIdx < sections.length - 1) ? 
-                                               sections[activeIdx+1].offsetLeft - sectionStart : 
-                                               sw - sectionStart;
-                            
-                            var localSl = sl - sectionStart;
-                            var page = Math.max(0, Math.floor((localSl + 5) / pw));
-                            var totalPages = Math.max(1, Math.round(sectionWidth / pw));
                             var idx = parseInt(active.getAttribute('data-index'));
+                            var sectionWidth = (sections.indexOf(active) < sections.length - 1) ? 
+                                               sections[sections.indexOf(active)+1].offsetLeft - sectionStart : 
+                                               document.documentElement.scrollWidth - sectionStart;
+                            
+                            var page = Math.max(0, Math.floor((sl - sectionStart + 5) / pw));
 
                             if (idx !== lastReportedIdx || page !== lastReportedPage) {
-                                lastReportedIdx = idx;
-                                lastReportedPage = page;
+                                lastReportedIdx = idx; lastReportedPage = page;
                                 AndroidReader.onChapterEntered(idx);
-                                AndroidReader.onProgressUpdate(idx, page, totalPages);
+                                AndroidReader.onProgressUpdate(idx, page, Math.max(1, Math.round(sectionWidth / pw)));
                             }
                         }
 
-                        clearTimeout(edgeCheckTimer);
-                        edgeCheckTimer = setTimeout(function() {
-                            var sw2 = document.documentElement.scrollWidth;
-                            var pw2 = document.documentElement.getBoundingClientRect().width;
-                            var sl2 = window.pageXOffset;
-                            console.log('EDGE_TIMER: sl=' + sl2 + ' sw=' + sw2 + ' pw=' + pw2);
-
-                            if (sl2 <= 20) {
-                                if (!isLoadingTop && wasInContent) {
-                                    isLoadingTop = true;
-                                    AndroidReader.onReachedTop();
-                                }
-                            } else if (sl2 + pw2 >= sw2 - 20) {
-                                if (!isLoadingBottom && wasInContent) {
-                                    isLoadingBottom = true;
-                                    AndroidReader.onReachedBottom();
-                                }
-                            } else if (sl2 > pw2) {
-                                isLoadingTop = false;
-                                isLoadingBottom = false;
-                                wasInContent = true;
-                            }
-                        }, 700);
+                        if (sl <= 20) {
+                            if (!isLoadingTop && wasInContent) { isLoadingTop = true; AndroidReader.onReachedTop(); }
+                        } else if (sl + pw >= document.documentElement.scrollWidth - 20) {
+                            if (!isLoadingBottom && wasInContent) { isLoadingBottom = true; AndroidReader.onReachedBottom(); }
+                        } else if (sl > pw) {
+                            isLoadingTop = false; isLoadingBottom = false; wasInContent = true;
+                        }
                     });
 
                     function appendChapter(index, html, targetIdx, targetOffset, lang, jumpToLast, anchor, scrollToNew, stickToIndex) {
                         var container = document.getElementById('chapters-container');
                         if (document.getElementById('chapter-' + index)) return;
-                        console.log('APPEND: index=' + index + ' containerLen=' + container.children.length);
                         
                         var section = document.createElement('section');
                         section.id = 'chapter-' + index;
                         section.setAttribute('data-index', index);
                         if (lang) section.setAttribute('lang', lang);
                         section.innerHTML = html;
-                        
-                        var items = section.querySelectorAll('p, h1, h2, h3, h4, h5, h6, li, img');
-                        for (var i=0; i<items.length; i++) items[i].setAttribute('data-idx', i);
+                        section.querySelectorAll('p, h1, h2, h3, h4, h5, h6, li, img').forEach((it, i) => it.setAttribute('data-idx', i));
                         
                         document.documentElement.style.scrollSnapType = 'none';
                         container.appendChild(section);
-                        while (container.children.length > 3) {
-                            container.removeChild(container.firstChild);
-                        }
+                        while (container.children.length > 3) container.removeChild(container.firstChild);
                         updateSnapMarkers();
                         document.documentElement.style.scrollSnapType = 'x mandatory';
                         
                         if (jumpToLast || anchor || targetIdx >= 0) {
                             var retry = 0;
-                            function syncIdxScroll() {
+                            function sync() {
                                 var pw = document.documentElement.getBoundingClientRect().width;
-                                var sw = document.documentElement.scrollWidth;
-                                if (sw > pw || retry > 40) {
+                                if (document.documentElement.scrollWidth > pw || retry > 40) {
                                     if (jumpToLast) {
-                                        var rect = section.getBoundingClientRect();
-                                        var lastPageInDoc = Math.floor((window.pageXOffset + rect.right - 5) / pw);
-                                        window.scrollTo(lastPageInDoc * pw, 0);
+                                        var r = section.getBoundingClientRect();
+                                        window.scrollTo(Math.floor((window.pageXOffset + r.right - 5) / pw) * pw, 0);
                                     } else if (anchor) {
-                                        var target = document.getElementById(anchor) || document.getElementsByName(anchor)[0];
-                                        if (target) {
-                                            var rect = target.getBoundingClientRect();
-                                            var page = Math.floor((window.pageXOffset + rect.left + 5) / pw);
-                                            window.scrollTo(page * pw, 0);
-                                        }
+                                        var t = document.getElementById(anchor) || document.getElementsByName(anchor)[0];
+                                        if (t) window.scrollTo(Math.floor((window.pageXOffset + t.getBoundingClientRect().left + 5) / pw) * pw, 0);
                                     } else if (targetIdx >= 0) {
-                                        var target = section.querySelector('[data-idx="' + targetIdx + '"]');
-                                        if (target) {
+                                        var t = section.querySelector('[data-idx="' + targetIdx + '"]');
+                                        if (t) {
+                                            var scrollPos = t.getBoundingClientRect().left;
                                             if (targetOffset > 0) {
-                                                var current = 0;
-                                                var foundNode = null;
-                                                var localOffset = 0;
-                                                var walker = document.createTreeWalker(target, NodeFilter.SHOW_TEXT, null, false);
-                                                while (walker.nextNode()) {
-                                                    var len = walker.currentNode.textContent.length;
-                                                    if (current + len >= targetOffset) {
-                                                        foundNode = walker.currentNode;
-                                                        localOffset = targetOffset - current;
-                                                        break;
-                                                    }
-                                                    current += len;
+                                                var cur = 0, node = null, off = 0, w = document.createTreeWalker(t, NodeFilter.SHOW_TEXT, null, false);
+                                                while (w.nextNode()) {
+                                                    var l = w.currentNode.textContent.length;
+                                                    if (cur + l >= targetOffset) { node = w.currentNode; off = targetOffset - cur; break; }
+                                                    cur += l;
                                                 }
-                                                if (foundNode) {
-                                                    var range = document.createRange();
-                                                    range.setStart(foundNode, localOffset);
-                                                    range.setEnd(foundNode, Math.min(localOffset + 1, foundNode.textContent.length));
-                                                    var rect = range.getBoundingClientRect();
-                                                    var page = Math.floor((window.pageXOffset + rect.left + 5) / pw);
-                                                    window.scrollTo(page * pw, 0);
-                                                } else {
-                                                    var rect = target.getBoundingClientRect();
-                                                    var page = Math.floor((window.pageXOffset + rect.left + 5) / pw);
-                                                    window.scrollTo(page * pw, 0);
+                                                if (node) {
+                                                    var rng = document.createRange(); rng.setStart(node, off); rng.setEnd(node, Math.min(off + 1, node.textContent.length));
+                                                    scrollPos = rng.getBoundingClientRect().left;
                                                 }
-                                            } else {
-                                                var rect = target.getBoundingClientRect();
-                                                var page = Math.floor((window.pageXOffset + rect.left + 5) / pw);
-                                                window.scrollTo(page * pw, 0);
                                             }
+                                            window.scrollTo(Math.floor((window.pageXOffset + scrollPos + 5) / pw) * pw, 0);
                                         }
                                     }
-                                } else {
-                                    retry++;
-                                    setTimeout(syncIdxScroll, 50);
-                                }
+                                } else { retry++; setTimeout(sync, 50); }
                             }
-                            syncIdxScroll();
+                            sync();
                         } else if (scrollToNew) {
-                            var pw = document.documentElement.getBoundingClientRect().width;
                             window.scrollTo(window.pageXOffset + section.getBoundingClientRect().left, 0);
                         } else if (stickToIndex >= 0) {
-                            var pw = document.documentElement.getBoundingClientRect().width;
-                            var keptSection = document.querySelector('section[data-index="' + stickToIndex + '"]');
-                            if (keptSection) {
-                                var rect = keptSection.getBoundingClientRect();
-                                var lastPage = Math.floor((window.pageXOffset + rect.right - 5) / pw);
-                                window.scrollTo(lastPage * pw, 0);
+                            var s = document.querySelector('section[data-index="' + stickToIndex + '"]');
+                            if (s) {
+                                var pw = document.documentElement.getBoundingClientRect().width;
+                                window.scrollTo(Math.floor((window.pageXOffset + s.getBoundingClientRect().right - 5) / pw) * pw, 0);
                             }
                         }
-                        isLoadingTop = false;
-                        isLoadingBottom = false;
-                        clearTimeout(edgeCheckTimer);
+                        isLoadingTop = isLoadingBottom = false;
                     }
 
                     function prependChapter(index, html, lang, goToNew, keepIndex) {
                         var container = document.getElementById('chapters-container');
                         if (document.getElementById('chapter-' + index)) return;
-                        console.log('PREPEND: index=' + index + ' containerLen=' + container.children.length);
                         
                         var section = document.createElement('section');
                         section.id = 'chapter-' + index;
                         section.setAttribute('data-index', index);
                         if (lang) section.setAttribute('lang', lang);
                         section.innerHTML = html;
-                        
-                        var items = section.querySelectorAll('p, h1, h2, h3, h4, h5, h6, li, img');
-                        for (var i=0; i<items.length; i++) items[i].setAttribute('data-idx', i);
+                        section.querySelectorAll('p, h1, h2, h3, h4, h5, h6, li, img').forEach((it, i) => it.setAttribute('data-idx', i));
                         
                         document.documentElement.style.scrollSnapType = 'none';
-                        var oldWidth = document.documentElement.scrollWidth;
+                        var oldW = document.documentElement.scrollWidth;
                         container.insertBefore(section, container.firstChild);
-                        while (container.children.length > 3) {
-                            container.removeChild(container.lastChild);
-                        }
-                        var newWidth = document.documentElement.scrollWidth;
-                        clearTimeout(edgeCheckTimer);
+                        while (container.children.length > 3) container.removeChild(container.lastChild);
+                        var newW = document.documentElement.scrollWidth;
 
                         if (keepIndex >= 0) {
-                            var pw = document.documentElement.getBoundingClientRect().width;
-                            var keptSection = document.querySelector('section[data-index="' + keepIndex + '"]');
-                            if (keptSection) {
-                                window.scrollTo(window.pageXOffset + keptSection.getBoundingClientRect().left, 0);
-                            } else {
-                                window.scrollBy(newWidth - oldWidth, 0);
-                            }
+                            var s = document.querySelector('section[data-index="' + keepIndex + '"]');
+                            if (s) window.scrollTo(window.pageXOffset + s.getBoundingClientRect().left, 0);
+                            else window.scrollBy(newW - oldW, 0);
                         } else if (goToNew) {
                             var pw = document.documentElement.getBoundingClientRect().width;
-                            var rect = section.getBoundingClientRect();
-                            var lastPage = Math.floor((window.pageXOffset + rect.right - 5) / pw);
-                            window.scrollTo(lastPage * pw, 0);
-                        } else {
-                            window.scrollBy(newWidth - oldWidth, 0);
-                        }
-                        isLoadingTop = false;
-                        isLoadingBottom = false;
-
-                        requestAnimationFrame(function() {
-                            requestAnimationFrame(function() {
-                                updateSnapMarkers();
-                                document.documentElement.style.scrollSnapType = 'x mandatory';
-                            });
-                        });
+                            window.scrollTo(Math.floor((window.pageXOffset + section.getBoundingClientRect().right - 5) / pw) * pw, 0);
+                        } else window.scrollBy(newW - oldW, 0);
+                        
+                        isLoadingTop = isLoadingBottom = false;
+                        requestAnimationFrame(() => { requestAnimationFrame(() => { updateSnapMarkers(); document.documentElement.style.scrollSnapType = 'x mandatory'; }); });
                     }
 
                     function scrollToPosition(chapterIdx, targetIdx, targetOffset) {
-                        var section = document.getElementById('chapter-' + chapterIdx);
-                        if (!section) return;
-                        
+                        var s = document.getElementById('chapter-' + chapterIdx);
+                        if (!s) return;
                         var pw = document.documentElement.getBoundingClientRect().width;
                         if (pw <= 0) return;
-
                         if (targetIdx >= 0) {
-                            var target = section.querySelector('[data-idx="' + targetIdx + '"]');
-                            if (target) {
+                            var t = s.querySelector('[data-idx="' + targetIdx + '"]');
+                            if (t) {
+                                var scrollPos = t.getBoundingClientRect().left;
                                 if (targetOffset > 0) {
-                                    var current = 0;
-                                    var foundNode = null;
-                                    var localOffset = 0;
-                                    var walker = document.createTreeWalker(target, NodeFilter.SHOW_TEXT, null, false);
-                                    while (walker.nextNode()) {
-                                        var len = walker.currentNode.textContent.length;
-                                        if (current + len >= targetOffset) {
-                                            foundNode = walker.currentNode;
-                                            localOffset = targetOffset - current;
-                                            break;
-                                        }
-                                        current += len;
+                                    var cur = 0, node = null, off = 0, w = document.createTreeWalker(t, NodeFilter.SHOW_TEXT, null, false);
+                                    while (w.nextNode()) {
+                                        var l = w.currentNode.textContent.length;
+                                        if (cur + l >= targetOffset) { node = w.currentNode; off = targetOffset - cur; break; }
+                                        cur += l;
                                     }
-                                    if (foundNode) {
-                                        var range = document.createRange();
-                                        range.setStart(foundNode, localOffset);
-                                        range.setEnd(foundNode, Math.min(localOffset + 1, foundNode.textContent.length));
-                                        var rect = range.getBoundingClientRect();
-                                        // We need to disable snap before scrolling to be sure
-                                        document.documentElement.style.scrollSnapType = 'none';
-                                        var page = Math.floor((window.pageXOffset + rect.left + 5) / pw);
-                                        window.scrollTo(page * pw, 0);
-                                        document.documentElement.style.scrollSnapType = 'x mandatory';
-                                    } else {
-                                        var rect = target.getBoundingClientRect();
-                                        document.documentElement.style.scrollSnapType = 'none';
-                                        var page = Math.floor((window.pageXOffset + rect.left + 5) / pw);
-                                        window.scrollTo(page * pw, 0);
-                                        document.documentElement.style.scrollSnapType = 'x mandatory';
+                                    if (node) {
+                                        var rng = document.createRange(); rng.setStart(node, off); rng.setEnd(node, Math.min(off + 1, node.textContent.length));
+                                        scrollPos = rng.getBoundingClientRect().left;
                                     }
-                                } else {
-                                    var rect = target.getBoundingClientRect();
-                                    document.documentElement.style.scrollSnapType = 'none';
-                                    var page = Math.floor((window.pageXOffset + rect.left + 5) / pw);
-                                    window.scrollTo(page * pw, 0);
-                                    document.documentElement.style.scrollSnapType = 'x mandatory';
                                 }
+                                document.documentElement.style.scrollSnapType = 'none';
+                                window.scrollTo(Math.floor((window.pageXOffset + scrollPos + 5) / pw) * pw, 0);
+                                document.documentElement.style.scrollSnapType = 'x mandatory';
                             }
                         }
                     }
@@ -2158,17 +1859,6 @@ class ReaderActivity : AppCompatActivity() {
             <!DOCTYPE html>
             <html>
             <head>
-                <style id="reader-style">
-                    mark.uni-highlight {
-                        background-color: #ffeb3b !important;
-                        color: #000 !important;
-                        border-radius: 2px;
-                    }
-                    [data-theme="dark"] mark.uni-highlight {
-                        background-color: #f57f17 !important;
-                        color: #fff !important;
-                    }
-                </style>
                 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
             </head>
             <body style="background-color: $bgColor !important;">
@@ -2177,24 +1867,18 @@ class ReaderActivity : AppCompatActivity() {
                     var observer = new IntersectionObserver(function(entries) {
                         entries.forEach(function(entry) {
                             if (entry.isIntersecting) {
-                                if (entry.target.id === 'bottom-sentinel') {
-                                    AndroidReader.onReachedBottom();
-                                } else if (entry.target.id === 'top-sentinel') {
-                                    AndroidReader.onReachedTop();
-                                }
+                                if (entry.target.id === 'bottom-sentinel') AndroidReader.onReachedBottom();
+                                else if (entry.target.id === 'top-sentinel') AndroidReader.onReachedTop();
                             }
                         });
                     }, { threshold: 0.1 });
                     
                     window.addEventListener('scroll', function() {
-                        var sections = [...document.querySelectorAll('section')];
-                        var active = sections.find(s => {
+                        var active = [...document.querySelectorAll('section')].find(s => {
                             var r = s.getBoundingClientRect();
                             return r.top <= 150 && r.bottom > 150;
                         });
-                        if (active) {
-                            AndroidReader.onChapterEntered(parseInt(active.getAttribute('data-index')));
-                        }
+                        if (active) AndroidReader.onChapterEntered(parseInt(active.getAttribute('data-index')));
                     });
 
                     function appendChapter(index, html, targetIdx, targetOffset, lang) {
@@ -2206,9 +1890,7 @@ class ReaderActivity : AppCompatActivity() {
                         section.setAttribute('data-index', index);
                         if (lang) section.setAttribute('lang', lang);
                         section.innerHTML = html;
-                        
-                        var items = section.querySelectorAll('p, h1, h2, h3, h4, h5, h6, li, img');
-                        for (var i=0; i<items.length; i++) items[i].setAttribute('data-idx', i);
+                        section.querySelectorAll('p, h1, h2, h3, h4, h5, h6, li, img').forEach((it, i) => it.setAttribute('data-idx', i));
                         
                         var oldBot = document.getElementById('bottom-sentinel');
                         if (oldBot) { observer.unobserve(oldBot); oldBot.remove(); }
@@ -2216,51 +1898,32 @@ class ReaderActivity : AppCompatActivity() {
                         container.appendChild(section);
                         
                         var sentinel = document.createElement('div');
-                        sentinel.id = 'bottom-sentinel';
-                        sentinel.style.height = '100px';
-                        sentinel.style.width = '100%';
-                        container.appendChild(sentinel);
-                        observer.observe(sentinel);
+                        sentinel.id = 'bottom-sentinel'; sentinel.style.height = '100px'; sentinel.style.width = '100%';
+                        container.appendChild(sentinel); observer.observe(sentinel);
                         
                         if (targetIdx >= 0) {
                             var retry = 0;
-                            function syncIdxScroll() {
-                                var target = section.querySelector('[data-idx="' + targetIdx + '"]');
-                                if (target || retry > 40) {
-                                    if (target) {
-                                        if (targetOffset <= 0) {
-                                            window.scrollTo(0, target.offsetTop);
-                                        } else {
-                                            var current = 0;
-                                            var foundNode = null;
-                                            var localOffset = 0;
-                                            var walker = document.createTreeWalker(target, NodeFilter.SHOW_TEXT, null, false);
-                                            while (walker.nextNode()) {
-                                                var len = walker.currentNode.textContent.length;
-                                                if (current + len >= targetOffset) {
-                                                    foundNode = walker.currentNode;
-                                                    localOffset = targetOffset - current;
-                                                    break;
-                                                }
-                                                current += len;
+                            function sync() {
+                                var t = section.querySelector('[data-idx="' + targetIdx + '"]');
+                                if (t || retry > 40) {
+                                    if (t) {
+                                        if (targetOffset <= 0) window.scrollTo(0, t.offsetTop);
+                                        else {
+                                            var cur = 0, node = null, off = 0, w = document.createTreeWalker(t, NodeFilter.SHOW_TEXT, null, false);
+                                            while (w.nextNode()) {
+                                                var l = w.currentNode.textContent.length;
+                                                if (cur + l >= targetOffset) { node = w.currentNode; off = targetOffset - cur; break; }
+                                                cur += l;
                                             }
-                                            if (foundNode) {
-                                                var range = document.createRange();
-                                                range.setStart(foundNode, localOffset);
-                                                range.setEnd(foundNode, Math.min(localOffset + 1, foundNode.textContent.length));
-                                                var rect = range.getBoundingClientRect();
-                                                window.scrollTo(0, window.pageYOffset + rect.top - 60);
-                                            } else {
-                                                window.scrollTo(0, target.offsetTop);
-                                            }
+                                            if (node) {
+                                                var rng = document.createRange(); rng.setStart(node, off); rng.setEnd(node, Math.min(off + 1, node.textContent.length));
+                                                window.scrollTo(0, window.pageYOffset + rng.getBoundingClientRect().top - 60);
+                                            } else window.scrollTo(0, t.offsetTop);
                                         }
                                     }
-                                } else {
-                                    retry++;
-                                    setTimeout(syncIdxScroll, 50);
-                                }
+                                } else { retry++; setTimeout(sync, 50); }
                             }
-                            syncIdxScroll();
+                            sync();
                         }
                     }
 
@@ -2273,25 +1936,18 @@ class ReaderActivity : AppCompatActivity() {
                         section.setAttribute('data-index', index);
                         if (lang) section.setAttribute('lang', lang);
                         section.innerHTML = html;
-                        
-                        var items = section.querySelectorAll('p, h1, h2, h3, h4, h5, h6, li, img');
-                        for (var i=0; i<items.length; i++) items[i].setAttribute('data-idx', i);
+                        section.querySelectorAll('p, h1, h2, h3, h4, h5, h6, li, img').forEach((it, i) => it.setAttribute('data-idx', i));
                         
                         var oldTop = document.getElementById('top-sentinel');
                         if (oldTop) { observer.unobserve(oldTop); oldTop.remove(); }
 
-                        var oldHeight = container.scrollHeight;
+                        var oldH = container.scrollHeight;
                         container.insertBefore(section, container.firstChild);
-
-                        var newHeight = container.scrollHeight;
-                        window.scrollBy(0, newHeight - oldHeight);
+                        window.scrollBy(0, container.scrollHeight - oldH);
                         
                         var sentinel = document.createElement('div');
-                        sentinel.id = 'top-sentinel';
-                        sentinel.style.height = '100px';
-                        sentinel.style.width = '100%';
-                        container.insertBefore(sentinel, container.firstChild);
-                        observer.observe(sentinel);
+                        sentinel.id = 'top-sentinel'; sentinel.style.height = '100px'; sentinel.style.width = '100%';
+                        container.insertBefore(sentinel, container.firstChild); observer.observe(sentinel);
                     }
                 </script>
             </body>
@@ -2315,9 +1971,7 @@ class ReaderActivity : AppCompatActivity() {
         webView.loadDataWithBaseURL("epub://seamless/", html, "text/html", "UTF-8", null)
         
         webView.postDelayed({
-            // Load target chapter FIRST
             loadAndAppendChapter(finalPos.first, idxToUse, offsetToUse) {
-                // Once target is loaded, load neighbors
                 loadAndPrependChapter(finalPos.first - 1, stayOnCurrent = true) {
                     loadAndAppendChapter(finalPos.first + 1, stickToCurrent = true) {
                         isJumpingToChapter = false
@@ -2337,19 +1991,15 @@ class ReaderActivity : AppCompatActivity() {
         stickToCurrent: Boolean = false,
         onFinished: (() -> Unit)? = null
     ) {
-        Log.d("Reader", "loadAndAppendChapter: index=$index, lastAppended=$lastAppendedIndex, spineSize=${epubBook?.spine?.size}")
         val loader = chapterLoader ?: return
         if (index < 0 || index >= (epubBook?.spine?.size ?: 0) || index <= lastAppendedIndex) {
-            Log.d("Reader", "loadAndAppendChapter SKIPPED: index=$index out of range or already loaded")
             onFinished?.invoke()
             return
         }
         
         isChapterLoading = true
         val content = loader.loadChapterHtml(index) ?: run {
-            isChapterLoading = false
-            onFinished?.invoke()
-            return
+            isChapterLoading = false; onFinished?.invoke(); return
         }
         
         if (lastAppendedIndex == -1) firstPrependedIndex = index
@@ -2358,9 +2008,8 @@ class ReaderActivity : AppCompatActivity() {
         val escapedHtml = content.html.replace("`", "\\`").replace("$", "\\$")
         val langArg = if (content.lang != null) "'${content.lang}'" else "null"
         val anchorArg = if (anchor != null) "'$anchor'" else "null"
-        val scrollToNewArg = scrollToNew.toString()
         val stickToIndexArg = if (stickToCurrent) currentSpineIndex.toString() else "-1"
-        webView.evaluateJavascript("appendChapter($index, `$escapedHtml`, $targetIdx, $targetOffset, $langArg, $jumpToLast, $anchorArg, $scrollToNewArg, $stickToIndexArg);") {
+        webView.evaluateJavascript("appendChapter($index, `$escapedHtml`, $targetIdx, $targetOffset, $langArg, $jumpToLast, $anchorArg, $scrollToNew, $stickToIndexArg);") {
             isChapterLoading = false
             webView.evaluateJavascript("applyHighlights('${getHighlightsJson(index)}')", null)
             onFinished?.invoke()
@@ -2370,23 +2019,19 @@ class ReaderActivity : AppCompatActivity() {
     private fun loadAndPrependChapter(index: Int, stayOnCurrent: Boolean = false, onFinished: (() -> Unit)? = null) {
         val loader = chapterLoader ?: return
         if (index < 0 || index >= (epubBook?.spine?.size ?: 0) || index >= firstPrependedIndex) {
-            onFinished?.invoke()
-            return
+            onFinished?.invoke(); return
         }
         
         isChapterLoading = true
         val content = loader.loadChapterHtml(index) ?: run {
-            isChapterLoading = false
-            onFinished?.invoke()
-            return
+            isChapterLoading = false; onFinished?.invoke(); return
         }
         
         firstPrependedIndex = index
         val escapedHtml = content.html.replace("`", "\\`").replace("$", "\\$")
         val langArg = if (content.lang != null) "'${content.lang}'" else "null"
-        val goToNewArg = stayOnCurrent.toString()
         val keepIndexArg = if (stayOnCurrent) currentSpineIndex.toString() else "-1"
-        webView.evaluateJavascript("prependChapter($index, `$escapedHtml`, $langArg, $goToNewArg, $keepIndexArg);") {
+        webView.evaluateJavascript("prependChapter($index, `$escapedHtml`, $langArg, $stayOnCurrent, $keepIndexArg);") {
             isChapterLoading = false
             webView.evaluateJavascript("applyHighlights('${getHighlightsJson(index)}')", null)
             onFinished?.invoke()
