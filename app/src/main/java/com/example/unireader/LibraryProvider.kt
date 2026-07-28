@@ -23,6 +23,7 @@ class LibraryProvider(private val context: Context) {
                 lastElementIndex = obj.optInt("lastElementIndex", -1),
                 lastAnchor = obj.optString("lastAnchor", null),
                 lastCharOffset = obj.optInt("lastCharOffset", -1),
+                lastPageIndex = obj.optInt("lastPageIndex", -1),
                 isTranslationMode = obj.optBoolean("isTranslationMode", false),
                 isTocTranslated = obj.optBoolean("isTocTranslated", false),
                 serverGlossary = obj.optString("serverGlossary", null) ?: obj.optString("translationGuidelines", null),
@@ -44,17 +45,18 @@ class LibraryProvider(private val context: Context) {
         saveBooks(books)
     }
 
-    fun updateBookProgress(uri: String, spineIndex: Int, elementIndex: Int, charOffset: Int, anchor: String?) {
+    fun updateBookProgress(uri: String, spineIndex: Int, elementIndex: Int, charOffset: Int, pageIndex: Int, anchor: String?) {
         if (spineIndex < 0) return // Invalid spine index
         
         val books = getBooks()
         val book = books.find { it.uri == uri }
         if (book != null) {
-            // Only update if we have a valid element index, or if we are at least updating the spine index
-            if (elementIndex >= 0 || spineIndex != book.lastSpineIndex) {
+            // Update if we have valid indices or if the spine index changed
+            if (elementIndex >= 0 || spineIndex != book.lastSpineIndex || pageIndex >= 0) {
                 book.lastSpineIndex = spineIndex
                 book.lastElementIndex = elementIndex
                 book.lastCharOffset = charOffset
+                book.lastPageIndex = pageIndex
                 book.lastAnchor = anchor
                 saveBooks(books)
             }
@@ -96,6 +98,7 @@ class LibraryProvider(private val context: Context) {
             obj.put("lastSpineIndex", book.lastSpineIndex)
             obj.put("lastElementIndex", book.lastElementIndex)
             obj.put("lastCharOffset", book.lastCharOffset)
+            obj.put("lastPageIndex", book.lastPageIndex)
             obj.put("lastAnchor", book.lastAnchor)
             obj.put("isTranslationMode", book.isTranslationMode)
             obj.put("isTocTranslated", book.isTocTranslated)

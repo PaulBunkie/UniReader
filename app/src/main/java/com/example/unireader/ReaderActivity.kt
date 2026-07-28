@@ -72,6 +72,7 @@ class ReaderActivity : AppCompatActivity() {
     // High-precision Element Index
     private var pendingElementIndex = -1
     private var pendingCharOffset = -1
+    private var pendingPageIndex = -1
     private var pendingAnchor: String? = null
     private var isJumpingToChapter = false
     private var chaptersToLoad = 0
@@ -235,6 +236,7 @@ class ReaderActivity : AppCompatActivity() {
         currentSpineIndex = savedInstanceState?.getInt("spine_index", 0) ?: 0
         pendingElementIndex = savedInstanceState?.getInt("element_index", -1) ?: -1
         pendingCharOffset = savedInstanceState?.getInt("char_offset", -1) ?: -1
+        pendingPageIndex = savedInstanceState?.getInt("page_index", -1) ?: -1
         pendingAnchor = savedInstanceState?.getString("anchor")
         
         // Load modes from settings, then override with savedInstanceState if present
@@ -269,6 +271,7 @@ class ReaderActivity : AppCompatActivity() {
                         currentSpineIndex = savedBook.lastSpineIndex
                         pendingElementIndex = savedBook.lastElementIndex
                         pendingCharOffset = savedBook.lastCharOffset
+                        pendingPageIndex = savedBook.lastPageIndex
                         pendingAnchor = savedBook.lastAnchor
                     }
                 }
@@ -302,6 +305,7 @@ class ReaderActivity : AppCompatActivity() {
         outState.putInt("spine_index", pos?.first ?: currentSpineIndex)
         outState.putInt("element_index", pos?.second ?: pendingElementIndex)
         outState.putInt("char_offset", pos?.third ?: pendingCharOffset)
+        outState.putInt("page_index", currentBookMetadata?.lastPageIndex ?: pendingPageIndex)
         
         outState.putString("anchor", pendingAnchor)
         outState.putBoolean("fullscreen", isFullscreenPref)
@@ -592,14 +596,21 @@ class ReaderActivity : AppCompatActivity() {
 
     private fun saveReadingPosition() {
         val uri = intent.getStringExtra("epub_uri") ?: return
-        captureCurrentPosition { pos ->
-            val libraryProvider = LibraryProvider(this)
-            val finalPos = if (pos.first >= 0) pos else (lastKnownPosition ?: pos)
-            
-            if (finalPos.first >= 0) {
-                libraryProvider.updateBookProgress(uri, finalPos.first, finalPos.second, finalPos.third, null)
-            }
-        }
+        val metadata = currentBookMetadata ?: return
+        
+        // Use cached data immediately for reliability
+        val libraryProvider = LibraryProvider(this)
+        libraryProvider.updateBookProgress(
+            uri,
+            currentSpineIndex,
+            metadata.lastElementIndex,
+            metadata.lastCharOffset,
+            metadata.lastPageIndex,
+            metadata.lastAnchor
+        )
+        
+        // Background high-precision capture
+        captureCurrentPosition { /* updates metadata internally */ }
     }
 
     private fun captureCurrentPosition(onCaptured: (Triple<Int, Int, Int>) -> Unit) {
@@ -660,7 +671,17 @@ class ReaderActivity : AppCompatActivity() {
                         }
 
                         var globalOffset = getTextOffset(node, target) + localOffset;
-                        return JSON.stringify({c: chapterIdx, idx: parseInt(target.getAttribute('data-idx')), offset: globalOffset});
+                        
+                        var pageInChapter = -1;
+                        if (isPaged) {
+                            var sections = [...document.querySelectorAll('section')];
+                            var active = sections.find(s => { var r = s.getBoundingClientRect(); return r.left < (pw / 2) && r.right > (pw / 2); });
+                            if (active) {
+                                pageInChapter = Math.floor((window.pageXOffset - active.offsetLeft + (pw / 2)) / pw);
+                            }
+                        }
+                        
+                        return JSON.stringify({c: chapterIdx, idx: parseInt(target.getAttribute('data-idx')), offset: globalOffset, p: pageInChapter});
                     }
                 }
                 return JSON.stringify({c: -1, idx: -1, offset: -1});
@@ -672,10 +693,13 @@ class ReaderActivity : AppCompatActivity() {
                 val c = json.optInt("c", -1)
                 val idx = json.optInt("idx", -1)
                 val off = json.optInt("offset", -1)
+                val pg = json.optInt("p", -1)
+                
                 val res = Triple(c, idx, off)
                 if (c >= 0) {
                     lastKnownPosition = res
-                    currentSpineIndex = c // Keep currentSpineIndex in sync
+                    currentSpineIndex = c 
+                    currentBookMetadata?.lastPageIndex = pg
                 }
                 onCaptured(res)
             } catch (_: Exception) {
@@ -1092,6 +1116,12 @@ class ReaderActivity : AppCompatActivity() {
                     val text = getString(R.string.reading_progress_format, section + 1, spineSize, page + 1, totalPages, percent)
                     findViewById<TextView>(R.id.tvProgressPlaceholder)?.text = text
                     
+                    // Sync current page to metadata
+                    currentBookMetadata?.let {
+                        it.lastSpineIndex = section
+                        it.lastPageIndex = page
+                    }
+
                     // Debounced save
                     mainHandler.removeCallbacks(savePositionRunnable)
                     mainHandler.postDelayed(savePositionRunnable, 2000)
@@ -1671,8 +1701,10 @@ class ReaderActivity : AppCompatActivity() {
 
                     var isLoadingTop = false, isLoadingBottom = false, wasInContent = false;
                     var lastReportedIdx = -1, lastReportedPage = -1;
+                    var isAutoScrolling = false;
 
                     window.addEventListener('scroll', function() {
+                        if (isAutoScrolling) return;
                         var pw = document.documentElement.getBoundingClientRect().width, sl = window.pageXOffset;
                         var mid = pw / 2;
                         var sections = [...document.querySelectorAll('section')];
@@ -1688,7 +1720,7 @@ class ReaderActivity : AppCompatActivity() {
                                                sections[sections.indexOf(active)+1].offsetLeft - sectionStart : 
                                                document.documentElement.scrollWidth - sectionStart;
                             
-                            var page = Math.max(0, Math.floor((sl - sectionStart + 5) / pw));
+                            var page = Math.max(0, Math.floor((sl - sectionStart + (pw / 2)) / pw));
 
                             if (idx !== lastReportedIdx || page !== lastReportedPage) {
                                 lastReportedIdx = idx; lastReportedPage = page;
@@ -1706,7 +1738,7 @@ class ReaderActivity : AppCompatActivity() {
                         }
                     });
 
-                    function appendChapter(index, html, targetIdx, targetOffset, lang, jumpToLast, anchor, scrollToNew, stickToIndex) {
+                    function appendChapter(index, html, targetIdx, targetOffset, lang, jumpToLast, anchor, scrollToNew, stickToIndex, targetPage) {
                         var container = document.getElementById('chapters-container');
                         if (document.getElementById('chapter-' + index)) return;
                         
@@ -1721,9 +1753,9 @@ class ReaderActivity : AppCompatActivity() {
                         container.appendChild(section);
                         while (container.children.length > 3) container.removeChild(container.firstChild);
                         updateSnapMarkers();
-                        document.documentElement.style.scrollSnapType = 'x mandatory';
                         
-                        if (jumpToLast || anchor || targetIdx >= 0) {
+                        if (jumpToLast || anchor || targetIdx >= 0 || targetPage >= 0) {
+                            var isAutoScrolling = true;
                             var retry = 0;
                             function sync() {
                                 var pw = document.documentElement.getBoundingClientRect().width;
@@ -1731,6 +1763,8 @@ class ReaderActivity : AppCompatActivity() {
                                     if (jumpToLast) {
                                         var r = section.getBoundingClientRect();
                                         window.scrollTo(Math.floor((window.pageXOffset + r.right - 5) / pw) * pw, 0);
+                                    } else if (targetPage >= 0) {
+                                        window.scrollTo(section.offsetLeft + targetPage * pw, 0);
                                     } else if (anchor) {
                                         var t = document.getElementById(anchor) || document.getElementsByName(anchor)[0];
                                         if (t) window.scrollTo(Math.floor((window.pageXOffset + t.getBoundingClientRect().left + 5) / pw) * pw, 0);
@@ -1753,17 +1787,23 @@ class ReaderActivity : AppCompatActivity() {
                                             window.scrollTo(Math.floor((window.pageXOffset + scrollPos + 5) / pw) * pw, 0);
                                         }
                                     }
+                                    document.documentElement.style.scrollSnapType = 'x mandatory';
+                                    isAutoScrolling = false;
                                 } else { retry++; setTimeout(sync, 50); }
                             }
                             sync();
                         } else if (scrollToNew) {
                             window.scrollTo(window.pageXOffset + section.getBoundingClientRect().left, 0);
+                            document.documentElement.style.scrollSnapType = 'x mandatory';
                         } else if (stickToIndex >= 0) {
                             var s = document.querySelector('section[data-index="' + stickToIndex + '"]');
                             if (s) {
                                 var pw = document.documentElement.getBoundingClientRect().width;
                                 window.scrollTo(Math.floor((window.pageXOffset + s.getBoundingClientRect().right - 5) / pw) * pw, 0);
                             }
+                            document.documentElement.style.scrollSnapType = 'x mandatory';
+                        } else {
+                            document.documentElement.style.scrollSnapType = 'x mandatory';
                         }
                         isLoadingTop = isLoadingBottom = false;
                     }
@@ -1785,6 +1825,7 @@ class ReaderActivity : AppCompatActivity() {
                         while (container.children.length > 3) container.removeChild(container.lastChild);
                         var newW = document.documentElement.scrollWidth;
 
+                        isAutoScrolling = true;
                         if (keepIndex >= 0) {
                             var s = document.querySelector('section[data-index="' + keepIndex + '"]');
                             if (s) window.scrollTo(window.pageXOffset + s.getBoundingClientRect().left, 0);
@@ -1793,6 +1834,7 @@ class ReaderActivity : AppCompatActivity() {
                             var pw = document.documentElement.getBoundingClientRect().width;
                             window.scrollTo(Math.floor((window.pageXOffset + section.getBoundingClientRect().right - 5) / pw) * pw, 0);
                         } else window.scrollBy(newW - oldW, 0);
+                        isAutoScrolling = false;
                         
                         isLoadingTop = isLoadingBottom = false;
                         requestAnimationFrame(() => { requestAnimationFrame(() => { updateSnapMarkers(); document.documentElement.style.scrollSnapType = 'x mandatory'; }); });
@@ -1819,9 +1861,11 @@ class ReaderActivity : AppCompatActivity() {
                                         scrollPos = rng.getBoundingClientRect().left;
                                     }
                                 }
+                                isAutoScrolling = true;
                                 document.documentElement.style.scrollSnapType = 'none';
                                 window.scrollTo(Math.floor((window.pageXOffset + scrollPos + 5) / pw) * pw, 0);
                                 document.documentElement.style.scrollSnapType = 'x mandatory';
+                                isAutoScrolling = false;
                             }
                         }
                     }
@@ -1844,17 +1888,19 @@ class ReaderActivity : AppCompatActivity() {
         
         val idxToUse = finalPos.second
         val offsetToUse = finalPos.third
+        val pageToUse = pendingPageIndex
         val anchorToUse = pendingAnchor
         val jumpToLast = shouldJumpToLastPage
 
         pendingElementIndex = -1
         pendingCharOffset = -1
+        pendingPageIndex = -1
         pendingAnchor = null
         shouldJumpToLastPage = false
 
         isJumpingToChapter = true
 
-        loadAndAppendChapter(finalPos.first, idxToUse, offsetToUse, jumpToLast, anchorToUse) {
+        loadAndAppendChapter(finalPos.first, idxToUse, offsetToUse, jumpToLast, anchorToUse, targetPage = pageToUse) {
             loadAndPrependChapter(finalPos.first - 1) {
                 loadAndAppendChapter(finalPos.first + 1) {
                     isJumpingToChapter = false
@@ -2008,6 +2054,7 @@ class ReaderActivity : AppCompatActivity() {
         anchor: String? = null,
         scrollToNew: Boolean = false,
         stickToCurrent: Boolean = false,
+        targetPage: Int = -1,
         onFinished: (() -> Unit)? = null
     ) {
         val loader = chapterLoader ?: return
@@ -2028,7 +2075,7 @@ class ReaderActivity : AppCompatActivity() {
         val langArg = if (content.lang != null) "'${content.lang}'" else "null"
         val anchorArg = if (anchor != null) "'$anchor'" else "null"
         val stickToIndexArg = if (stickToCurrent) currentSpineIndex.toString() else "-1"
-        webView.evaluateJavascript("appendChapter($index, `$escapedHtml`, $targetIdx, $targetOffset, $langArg, $jumpToLast, $anchorArg, $scrollToNew, $stickToIndexArg);") {
+        webView.evaluateJavascript("appendChapter($index, `$escapedHtml`, $targetIdx, $targetOffset, $langArg, $jumpToLast, $anchorArg, $scrollToNew, $stickToIndexArg, $targetPage);") {
             isChapterLoading = false
             webView.evaluateJavascript("applyHighlights('${getHighlightsJson(index)}')", null)
             onFinished?.invoke()
@@ -2090,13 +2137,14 @@ class ReaderActivity : AppCompatActivity() {
         }
     }
 
-    private fun loadSpineItem(index: Int, jumpToLast: Boolean = false) {
+    private fun loadSpineItem(index: Int, jumpToLast: Boolean = false, targetPage: Int = -1) {
         mainHandler.removeCallbacks(reloadChapterRunnable)
         pendingReloadIndex = -1
         
         lastKnownPosition = null // CLEAR CACHE on intentional jump
         currentSpineIndex = index
         shouldJumpToLastPage = jumpToLast
+        if (targetPage >= 0) pendingPageIndex = targetPage
         updateChapterTitle()
 
         // Ensure manager starts pre-fetching for the new current chapter and its neighbors

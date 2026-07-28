@@ -8,6 +8,7 @@ data class BookMetadata(
     var lastElementIndex: Int = -1,
     var lastAnchor: String? = null,
     var lastCharOffset: Int = -1,
+    var lastPageIndex: Int = -1,
     var isTranslationMode: Boolean = false,
     var isTocTranslated: Boolean = false,
     var serverGlossary: String? = null,
