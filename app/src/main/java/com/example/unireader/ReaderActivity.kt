@@ -1073,6 +1073,14 @@ class ReaderActivity : AppCompatActivity() {
                     if (isJumpingToChapter || isSwipeBlocked) return@runOnUiThread
                     
                     if (currentSpineIndex != index) {
+                        if (currentBookMetadata?.isTranslationMode == true) {
+                            // In translation mode, we force a full container reload to pick up fresh translations.
+                            // Forward navigation: jumpToLast = false (land at start).
+                            // Backward navigation: jumpToLast = true (land at end).
+                            loadSpineItem(index, jumpToLast = index < currentSpineIndex)
+                            return@runOnUiThread
+                        }
+
                         currentSpineIndex = index
                         updateChapterTitle()
                         saveReadingPosition()
@@ -2293,6 +2301,7 @@ class ReaderActivity : AppCompatActivity() {
         lastAppendedIndex = -1
         firstPrependedIndex = Int.MAX_VALUE
         isChapterLoading = false
+        isJumpingToChapter = true
         
         val useCache = lastKnownPosition != null && lastKnownPosition?.first == currentSpineIndex
         val finalPos = if (useCache) lastKnownPosition!! else Triple(currentSpineIndex, pendingElementIndex, pendingCharOffset)
@@ -2306,7 +2315,6 @@ class ReaderActivity : AppCompatActivity() {
         webView.loadDataWithBaseURL("epub://seamless/", html, "text/html", "UTF-8", null)
         
         webView.postDelayed({
-            isJumpingToChapter = true
             // Load target chapter FIRST
             loadAndAppendChapter(finalPos.first, idxToUse, offsetToUse) {
                 // Once target is loaded, load neighbors
@@ -2423,6 +2431,9 @@ class ReaderActivity : AppCompatActivity() {
         currentSpineIndex = index
         shouldJumpToLastPage = jumpToLast
         updateChapterTitle()
+
+        // Ensure manager starts pre-fetching for the new current chapter and its neighbors
+        translationManager?.onChapterVisible(index)
         
         if (isPagedMode) {
             initPagedView()

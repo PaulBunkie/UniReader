@@ -1,0 +1,5 @@
+- [x] Update `onChapterEntered` in `ReaderActivity.kt` to trigger `loadSpineItem` in translation mode.
+- [x] Verify the logic for backward navigation (`jumpToLast`).
+- [x] Verify that `translationManager` pre-fetching is still triggered (added to `loadSpineItem`).
+- [x] Fixed `isJumpingToChapter` initialization in `initSeamlessScroll`.
+- [ ] Test the forward/backward navigation in translation mode.
