@@ -595,44 +595,33 @@ class ReaderActivity : AppCompatActivity() {
             (function() {
                 var pw = window.innerWidth;
                 var isPaged = document.body.getAttribute('data-mode') === 'paged';
-                var range = document.caretRangeFromPoint(isPaged ? 40 : pw / 2, 150);
-                var c = -1, off = -1, p = -1;
+                var found = document.elementFromPoint(isPaged ? 40 : pw / 2, 150);
+                var c = -1, idx = -1, p = -1;
 
-                if (range) {
-                    var node = range.startContainer;
-                    var target = node.nodeType === 3 ? node.parentNode.closest('[data-idx]') : node.closest('[data-idx]');
+                if (found) {
+                    var target = found.closest('[data-idx]');
                     if (target) {
                         var section = target.closest('section');
                         c = section ? parseInt(section.getAttribute('data-index')) : -1;
-                        
-                        function getTextOffset(node, target) {
-                            var offset = 0;
-                            var walker = document.createTreeWalker(target, NodeFilter.SHOW_TEXT, null, false);
-                            while (walker.nextNode()) {
-                                if (walker.currentNode === node) break;
-                                offset += walker.currentNode.textContent.length;
-                            }
-                            return offset;
-                        }
-                        off = getTextOffset(node, target) + range.startOffset;
+                        idx = parseInt(target.getAttribute('data-idx'));
                         
                         if (isPaged) {
                             p = Math.floor((window.pageXOffset - section.offsetLeft + (pw / 2)) / pw);
                         }
                     }
                 }
-                return JSON.stringify({c: c, offset: off, p: p});
+                return JSON.stringify({c: c, idx: idx, p: p});
             })();
         """.trimIndent()
         webView.evaluateJavascript(js) {
             try {
                 val json = org.json.JSONObject(it.trim('"').replace("\\\"", "\""))
                 val c = json.optInt("c", -1)
-                val off = json.optInt("offset", -1)
+                val idx = json.optInt("idx", -1)
                 val pg = json.optInt("p", -1)
                 
                 if (c >= 0) {
-                    lastKnownPosition = Triple(c, -1, off)
+                    lastKnownPosition = Triple(c, idx, -1) // Use Triple(chapter, elementIdx, -1)
                     currentSpineIndex = c 
                     currentBookMetadata?.lastPageIndex = pg
                 }
@@ -1759,28 +1748,19 @@ class ReaderActivity : AppCompatActivity() {
                         if (!s) return;
                         var pw = document.documentElement.getBoundingClientRect().width;
                         if (pw <= 0) return;
+                        
+                        var target = null;
                         if (targetIdx >= 0) {
-                            var t = s.querySelector('[data-idx="' + targetIdx + '"]');
-                            if (t) {
-                                var scrollPos = t.getBoundingClientRect().left;
-                                if (targetOffset > 0) {
-                                    var cur = 0, node = null, off = 0, w = document.createTreeWalker(t, NodeFilter.SHOW_TEXT, null, false);
-                                    while (w.nextNode()) {
-                                        var l = w.currentNode.textContent.length;
-                                        if (cur + l >= targetOffset) { node = w.currentNode; off = targetOffset - cur; break; }
-                                        cur += l;
-                                    }
-                                    if (node) {
-                                        var rng = document.createRange(); rng.setStart(node, off); rng.setEnd(node, Math.min(off + 1, node.textContent.length));
-                                        scrollPos = rng.getBoundingClientRect().left;
-                                    }
-                                }
-                                isAutoScrolling = true;
-                                document.documentElement.style.scrollSnapType = 'none';
-                                window.scrollTo(Math.floor((window.pageXOffset + scrollPos + 5) / pw) * pw, 0);
-                                document.documentElement.style.scrollSnapType = 'x mandatory';
-                                isAutoScrolling = false;
-                            }
+                            target = s.querySelector('[data-idx="' + targetIdx + '"]');
+                        }
+
+                        if (target) {
+                            isAutoScrolling = true;
+                            document.documentElement.style.scrollSnapType = 'none';
+                            var left = target.getBoundingClientRect().left;
+                            window.scrollTo(Math.floor((window.pageXOffset + left + 5) / pw) * pw, 0);
+                            document.documentElement.style.scrollSnapType = 'x mandatory';
+                            isAutoScrolling = false;
                         }
                     }
                 </script>
