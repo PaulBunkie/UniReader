@@ -1060,20 +1060,18 @@ class ReaderActivity : AppCompatActivity() {
                     if (isJumpingToChapter || isSwipeBlocked) return@runOnUiThread
                     
                     if (currentSpineIndex != index) {
-                        if (currentBookMetadata?.isTranslationMode == true) {
+                        if (isPagedMode && currentBookMetadata?.isTranslationMode == true) {
+                            // In paged mode, we still want the delayed reload to pick up fresh translations.
                             mainHandler.removeCallbacks(reloadChapterRunnable)
                             pendingReloadJumpToLast = index < currentSpineIndex
                             pendingReloadIndex = index
-                            
-                            // Update UI immediately (title)
                             currentSpineIndex = index
                             updateChapterTitle()
-                            
-                            // Delay container refresh to allow scroll/page flip to finish
                             mainHandler.postDelayed(reloadChapterRunnable, 500)
                             return@runOnUiThread
                         }
 
+                        // For seamless scroll (or non-translation mode), restore truly seamless transition.
                         currentSpineIndex = index
                         updateChapterTitle()
                         saveReadingPosition()
@@ -1646,12 +1644,17 @@ class ReaderActivity : AppCompatActivity() {
     private fun initPagedView() {
         val isDarkMode = settings.isDarkMode
         val bgColor = if (isDarkMode) "#000000" else "#FFFFFF"
+        val textColor = if (isDarkMode) "#E0E0E0" else "#000000"
 
         val html = """
             <!DOCTYPE html>
             <html style="background-color: $bgColor;">
             <head>
                 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+                <style>
+                    body { margin: 0; padding: 0; background-color: $bgColor; color: $textColor; }
+                    #chapters-container { width: 100%; height: 100%; }
+                </style>
             </head>
             <body data-mode="paged" style="background-color: $bgColor !important; margin: 0; padding: 0;">
                 <div id="snap-ribbon"></div>
@@ -1835,7 +1838,7 @@ class ReaderActivity : AppCompatActivity() {
         isChapterLoading = false
         isJumpingToChapter = true
 
-        webView.loadDataWithBaseURL("epub://paged/", html, "text/html", "UTF-8", null)
+        webView.loadDataWithBaseURL("epub://reader/", html, "text/html", "UTF-8", null)
     }
 
     private fun loadInitialPagedChapters() {
@@ -1852,30 +1855,30 @@ class ReaderActivity : AppCompatActivity() {
         pendingAnchor = null
         shouldJumpToLastPage = false
 
-        chaptersToLoad = 3
         isJumpingToChapter = true
 
-        fun onChapterDone() {
-            chaptersToLoad--
-            if (chaptersToLoad <= 0) {
-                isJumpingToChapter = false
+        loadAndAppendChapter(finalPos.first, idxToUse, offsetToUse, jumpToLast, anchorToUse) {
+            loadAndPrependChapter(finalPos.first - 1) {
+                loadAndAppendChapter(finalPos.first + 1) {
+                    isJumpingToChapter = false
+                }
             }
         }
-
-        loadAndAppendChapter(finalPos.first, idxToUse, offsetToUse, jumpToLast, anchorToUse) { onChapterDone() }
-        loadAndPrependChapter(finalPos.first - 1) { onChapterDone() }
-        loadAndAppendChapter(finalPos.first + 1) { onChapterDone() }
     }
 
     private fun initSeamlessScroll() {
         val isDarkMode = settings.isDarkMode
         val bgColor = if (isDarkMode) "#000000" else "#FFFFFF"
+        val textColor = if (isDarkMode) "#E0E0E0" else "#000000"
         
         val html = """
             <!DOCTYPE html>
             <html>
             <head>
                 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+                <style>
+                    body { margin: 0; padding: 0; background-color: $bgColor; color: $textColor; }
+                </style>
             </head>
             <body style="background-color: $bgColor !important;">
                 <div id="chapters-container"></div>
@@ -1984,7 +1987,7 @@ class ReaderActivity : AppCompatActivity() {
         pendingElementIndex = -1
         pendingCharOffset = -1
         
-        webView.loadDataWithBaseURL("epub://seamless/", html, "text/html", "UTF-8", null)
+        webView.loadDataWithBaseURL("epub://reader/", html, "text/html", "UTF-8", null)
         
         webView.postDelayed({
             loadAndAppendChapter(finalPos.first, idxToUse, offsetToUse) {
@@ -2105,6 +2108,8 @@ class ReaderActivity : AppCompatActivity() {
             initSeamlessScroll()
         }
     }
+
+
 
     private fun serveEpubResource(path: String): WebResourceResponse? {
         val book = epubBook ?: return null

@@ -1,36 +1,36 @@
-# Implementation Plan - JavaScript Cleanup and Optimization
+# Implementation Plan - Restoring Seamless Scroll
 
-This plan focuses on cleaning up the accumulated "noise" (crap) in the JavaScript injected into the WebView, while preserving the core paging and alignment logic.
+This plan restores the original, truly seamless behavior for the vertical scroll mode while maintaining the translation-aware reload logic for paged mode.
 
 ## Proposed Changes
 
-### [Component] ReaderActivity (JavaScript Injection)
+### [Component] ReaderActivity Logic
 
 #### [MODIFY] [ReaderActivity.kt](file:///C:/Users/Владелец/AndroidStudioProjects/UniReader/app/src/main/java/com/example/unireader/ReaderActivity.kt)
 
-1.  **Clean up `injectIndexingScript()`**:
-    *   Remove all `console.log` and `console.warn` statements (except for critical errors).
-    *   Streamline the selection menu and highlight logic (remove redundant lookups).
-    *   Simplify context capture logic.
-2.  **Optimize `initPagedView()`**:
-    *   Remove `console.log`.
-    *   Simplify the `scroll` listener. Instead of a complex loop for `active` section, use a more efficient approach (e.g., checking `window.pageXOffset`).
-    *   Streamline `appendChapter` and `prependChapter`. Remove the polling `syncIdxScroll` if possible, or make it more robust/less verbose.
-    *   Remove the `while (container.children.length > 3)` logic if we decide to rely more on the new container refresh strategy (though it's still useful for non-translation mode).
-3.  **Optimize `initSeamlessScroll()`**:
-    *   Remove `console.log`.
-    *   Simplify sentinel logic.
-4.  **Ensure Line Alignment**:
-    *   Verify if "align by lines" refers to the horizontal snapping to `100vw`.
-    *   Optionally add a CSS rule in `applyCurrentSettings` to ensure vertical alignment of lines (making page height a multiple of `line-height`) if it's missing.
+1.  **Refine `onChapterEntered`**:
+    *   Add a check for `isPagedMode`.
+    *   If `isPagedMode && currentBookMetadata?.isTranslationMode == true`, keep the 500ms delayed reload logic (to ensure translations are picked up in horizontal view).
+    *   If `!isPagedMode` (Seamless mode), **restore the original logic**:
+        *   Immediately update `currentSpineIndex`.
+        *   Update chapter title.
+        *   Notify `translationManager`.
+        *   Apply highlights via JS.
+        *   **Do NOT** trigger a container reload (`loadSpineItem`). This preserves the continuous vertical scroll feeling.
+2.  **Fix `initSeamlessScroll`**:
+    *   Correct the base URL in `webView.loadDataWithBaseURL` (ensure it uses `epub://reader/` or consistent naming).
+    *   Verify that the 3-chapter sliding window logic (`loadAndAppend/Prepend`) is correctly initialized.
 
 ## Verification Plan
 
 ### Manual Verification
-1.  Verify that paging still works exactly as before (snapping to pages).
-2.  Verify that highlights, fixes, and dictionary work without errors.
-3.  Check Logcat to ensure the "noise" (console logs) is gone.
-4.  Ensure navigation (TOC, internal links) still lands in the right place.
-
-### Automated Tests
-*   N/A
+1.  **Seamless Mode**:
+    *   Open a book and switch to vertical scroll (seamless).
+    *   Scroll across chapter boundaries.
+    *   **Verify**: The scroll remains perfectly continuous. No flashes or reloads occur when crossing from Chapter 1 to Chapter 2.
+2.  **Paged Mode**:
+    *   Switch to horizontal paging.
+    *   Swipe to a new chapter.
+    *   **Verify**: The 500ms delayed reload still happens to ensure the new chapter is translated.
+3.  **Consistency**:
+    *   Ensure TOC jumps still work in both modes.

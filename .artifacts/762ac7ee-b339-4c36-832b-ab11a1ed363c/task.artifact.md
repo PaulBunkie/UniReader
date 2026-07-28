@@ -1,5 +1,4 @@
-- [x] Update `onChapterEntered` in `ReaderActivity.kt` to trigger `loadSpineItem` in translation mode.
-- [x] Verify the logic for backward navigation (`jumpToLast`).
-- [x] Verify that `translationManager` pre-fetching is still triggered (added to `loadSpineItem`).
-- [x] Fixed `isJumpingToChapter` initialization in `initSeamlessScroll`.
-- [ ] Test the forward/backward navigation in translation mode.
+- [x] Update `onChapterEntered` to only reload in paged mode.
+- [x] Fix base URL in `initSeamlessScroll`.
+- [ ] Verify seamless scroll continuity in the app.
+- [ ] Verify paged mode translation updates still work.
