@@ -69,9 +69,6 @@ class ReaderActivity : AppCompatActivity() {
     private var lastAppendedIndex = -1
     private var firstPrependedIndex = Int.MAX_VALUE
     
-    // High-precision Element Index
-    private var pendingElementIndex = -1
-    private var pendingCharOffset = -1
     private var pendingPageIndex = -1
     private var pendingAnchor: String? = null
     private var isJumpingToChapter = false
@@ -234,12 +231,10 @@ class ReaderActivity : AppCompatActivity() {
         // STATE RESTORATION
         val uriString = savedInstanceState?.getString("epub_uri") ?: intent.getStringExtra("epub_uri")
         currentSpineIndex = savedInstanceState?.getInt("spine_index", 0) ?: 0
-        pendingElementIndex = savedInstanceState?.getInt("element_index", -1) ?: -1
-        pendingCharOffset = savedInstanceState?.getInt("char_offset", -1) ?: -1
         pendingPageIndex = savedInstanceState?.getInt("page_index", -1) ?: -1
         pendingAnchor = savedInstanceState?.getString("anchor")
         
-        // Load modes from settings, then override with savedInstanceState if present
+        // Load modes from settings
         isPagedMode = savedInstanceState?.getBoolean("paged_mode", settings.isPagedMode) ?: settings.isPagedMode
         isFullscreenPref = savedInstanceState?.getBoolean("fullscreen", settings.isFullscreen) ?: settings.isFullscreen
         isUiOverlayVisible = savedInstanceState?.getBoolean("ui_visible", !isFullscreenPref) ?: !isFullscreenPref
@@ -269,17 +264,14 @@ class ReaderActivity : AppCompatActivity() {
                 if (savedInstanceState == null) {
                     metadata?.let { savedBook ->
                         currentSpineIndex = savedBook.lastSpineIndex
-                        pendingElementIndex = savedBook.lastElementIndex
-                        pendingCharOffset = savedBook.lastCharOffset
                         pendingPageIndex = savedBook.lastPageIndex
-                        pendingAnchor = savedBook.lastAnchor
                     }
                 }
                 
                 if (metadata?.isTranslationMode == true) {
                     initTranslation(book, uriString)
                     
-                    val isFirstOpen = metadata.lastSpineIndex == 0 && metadata.lastElementIndex == -1
+                    val isFirstOpen = metadata.lastSpineIndex == 0 && metadata.lastPageIndex == -1
                     val isCurrentReady = translationManager?.isChapterTranslated(currentSpineIndex) == true
                     
                     if (isFirstOpen && !isCurrentReady) {
@@ -301,13 +293,10 @@ class ReaderActivity : AppCompatActivity() {
         super.onSaveInstanceState(outState)
         intent.getStringExtra("epub_uri")?.let { outState.putString("epub_uri", it) }
         
-        val pos = lastKnownPosition
-        outState.putInt("spine_index", pos?.first ?: currentSpineIndex)
-        outState.putInt("element_index", pos?.second ?: pendingElementIndex)
-        outState.putInt("char_offset", pos?.third ?: pendingCharOffset)
+        outState.putInt("spine_index", currentSpineIndex)
         outState.putInt("page_index", currentBookMetadata?.lastPageIndex ?: pendingPageIndex)
-        
         outState.putString("anchor", pendingAnchor)
+        
         outState.putBoolean("fullscreen", isFullscreenPref)
         outState.putBoolean("ui_visible", isUiOverlayVisible)
         outState.putBoolean("paged_mode", isPagedMode)
@@ -559,17 +548,12 @@ class ReaderActivity : AppCompatActivity() {
             settings.isPagedMode = paged
             settings.save(this)
             
-            val finalPos = if (pos.first >= 0) pos else (lastKnownPosition ?: pos)
-            
-            if (finalPos.first >= 0) currentSpineIndex = finalPos.first
-            pendingElementIndex = finalPos.second
-            pendingCharOffset = finalPos.third
-            
-            if (!isPagedMode) {
-                initSeamlessScroll()
-            } else {
-                initPagedView()
+            if (pos.first >= 0) {
+                currentSpineIndex = pos.first
+                // Note: element indexing is temporarily disabled for mode switching
             }
+            
+            if (!isPagedMode) initSeamlessScroll() else initPagedView()
             updateUiState()
         }
     }
@@ -598,110 +582,61 @@ class ReaderActivity : AppCompatActivity() {
         val uri = intent.getStringExtra("epub_uri") ?: return
         val metadata = currentBookMetadata ?: return
         
-        // Use cached data immediately for reliability
         val libraryProvider = LibraryProvider(this)
         libraryProvider.updateBookProgress(
             uri,
             currentSpineIndex,
-            metadata.lastElementIndex,
-            metadata.lastCharOffset,
-            metadata.lastPageIndex,
-            metadata.lastAnchor
+            metadata.lastPageIndex
         )
-        
-        // Background high-precision capture
-        captureCurrentPosition { /* updates metadata internally */ }
     }
 
     private fun captureCurrentPosition(onCaptured: (Triple<Int, Int, Int>) -> Unit) {
         val js = """
             (function() {
-                function getTextOffset(node, target) {
-                    var offset = 0;
-                    var walker = document.createTreeWalker(target, NodeFilter.SHOW_TEXT, null, false);
-                    while (walker.nextNode()) {
-                        if (walker.currentNode === node) break;
-                        offset += walker.currentNode.textContent.length;
-                    }
-                    return offset;
-                }
-
                 var pw = window.innerWidth;
-                var mode = document.body.getAttribute('data-mode') || 'scroll';
-                
-                var startY = 60; 
-                var endY = 500;
-                
-                for (var y = startY; y < endY; y += 40) {
-                    var found = document.elementFromPoint(pw / 2, y);
-                    if (!found) continue;
-                    
-                    var section = found.closest('section');
-                    var chapterIdx = section ? parseInt(section.getAttribute('data-index')) : -1;
-                    
-                    var target = found.closest('p, h1, h2, h3, h4, h5, h6, li, img');
-                    if (!target || !target.hasAttribute('data-idx')) continue;
-                    
-                    if (target.tagName.toLowerCase() === 'img') {
-                        return JSON.stringify({c: chapterIdx, idx: parseInt(target.getAttribute('data-idx')), offset: -1});
-                    }
-                    
-                    var range = document.caretRangeFromPoint(pw / 2, y);
-                    if (range) {
-                        var node = range.startContainer;
-                        var localOffset = range.startOffset;
-                        
-                        var lineRange = document.createRange();
-                        lineRange.setStart(node, localOffset);
-                        lineRange.setEnd(node, localOffset);
-                        var rects = lineRange.getClientRects();
-                        if (rects.length > 0) {
-                            var targetLeft = rects[0].left;
-                            var searchOffset = localOffset;
-                            while (searchOffset > 0) {
-                                lineRange.setStart(node, searchOffset - 1);
-                                lineRange.setEnd(node, searchOffset);
-                                var r = lineRange.getClientRects();
-                                if (r.length > 0 && Math.abs(r[0].left - targetLeft) > 10) {
-                                    break;
-                                }
-                                searchOffset--;
-                            }
-                            localOffset = searchOffset;
-                        }
+                var isPaged = document.body.getAttribute('data-mode') === 'paged';
+                var range = document.caretRangeFromPoint(isPaged ? 40 : pw / 2, 150);
+                var c = -1, off = -1, p = -1;
 
-                        var globalOffset = getTextOffset(node, target) + localOffset;
+                if (range) {
+                    var node = range.startContainer;
+                    var target = node.nodeType === 3 ? node.parentNode.closest('[data-idx]') : node.closest('[data-idx]');
+                    if (target) {
+                        var section = target.closest('section');
+                        c = section ? parseInt(section.getAttribute('data-index')) : -1;
                         
-                        var pageInChapter = -1;
-                        if (isPaged) {
-                            var sections = [...document.querySelectorAll('section')];
-                            var active = sections.find(s => { var r = s.getBoundingClientRect(); return r.left < (pw / 2) && r.right > (pw / 2); });
-                            if (active) {
-                                pageInChapter = Math.floor((window.pageXOffset - active.offsetLeft + (pw / 2)) / pw);
+                        function getTextOffset(node, target) {
+                            var offset = 0;
+                            var walker = document.createTreeWalker(target, NodeFilter.SHOW_TEXT, null, false);
+                            while (walker.nextNode()) {
+                                if (walker.currentNode === node) break;
+                                offset += walker.currentNode.textContent.length;
                             }
+                            return offset;
                         }
+                        off = getTextOffset(node, target) + range.startOffset;
                         
-                        return JSON.stringify({c: chapterIdx, idx: parseInt(target.getAttribute('data-idx')), offset: globalOffset, p: pageInChapter});
+                        if (isPaged) {
+                            p = Math.floor((window.pageXOffset - section.offsetLeft + (pw / 2)) / pw);
+                        }
                     }
                 }
-                return JSON.stringify({c: -1, idx: -1, offset: -1});
+                return JSON.stringify({c: c, offset: off, p: p});
             })();
         """.trimIndent()
         webView.evaluateJavascript(js) {
             try {
                 val json = org.json.JSONObject(it.trim('"').replace("\\\"", "\""))
                 val c = json.optInt("c", -1)
-                val idx = json.optInt("idx", -1)
                 val off = json.optInt("offset", -1)
                 val pg = json.optInt("p", -1)
                 
-                val res = Triple(c, idx, off)
                 if (c >= 0) {
-                    lastKnownPosition = res
+                    lastKnownPosition = Triple(c, -1, off)
                     currentSpineIndex = c 
                     currentBookMetadata?.lastPageIndex = pg
                 }
-                onCaptured(res)
+                onCaptured(lastKnownPosition ?: Triple(-1, -1, -1))
             } catch (_: Exception) {
                 onCaptured(Triple(-1, -1, -1))
             }
@@ -1600,9 +1535,6 @@ class ReaderActivity : AppCompatActivity() {
         }
 
         if (targetIndex != -1 && targetIndex != currentSpineIndex) {
-            pendingElementIndex = -1
-            pendingCharOffset = -1
-            pendingAnchor = fragment
             loadSpineItem(targetIndex)
         } else if (fragment != null) {
             if (isPagedMode) {
@@ -1738,7 +1670,7 @@ class ReaderActivity : AppCompatActivity() {
                         }
                     });
 
-                    function appendChapter(index, html, targetIdx, targetOffset, lang, jumpToLast, anchor, scrollToNew, stickToIndex, targetPage) {
+                    function appendChapter(index, html, lang, jumpToLast, anchor, scrollToNew, stickToIndex, targetPage) {
                         var container = document.getElementById('chapters-container');
                         if (document.getElementById('chapter-' + index)) return;
                         
@@ -1754,7 +1686,7 @@ class ReaderActivity : AppCompatActivity() {
                         while (container.children.length > 3) container.removeChild(container.firstChild);
                         updateSnapMarkers();
                         
-                        if (jumpToLast || anchor || targetIdx >= 0 || targetPage >= 0) {
+                        if (jumpToLast || anchor || targetPage >= 0) {
                             var isAutoScrolling = true;
                             var retry = 0;
                             function sync() {
@@ -1768,24 +1700,6 @@ class ReaderActivity : AppCompatActivity() {
                                     } else if (anchor) {
                                         var t = document.getElementById(anchor) || document.getElementsByName(anchor)[0];
                                         if (t) window.scrollTo(Math.floor((window.pageXOffset + t.getBoundingClientRect().left + 5) / pw) * pw, 0);
-                                    } else if (targetIdx >= 0) {
-                                        var t = section.querySelector('[data-idx="' + targetIdx + '"]');
-                                        if (t) {
-                                            var scrollPos = t.getBoundingClientRect().left;
-                                            if (targetOffset > 0) {
-                                                var cur = 0, node = null, off = 0, w = document.createTreeWalker(t, NodeFilter.SHOW_TEXT, null, false);
-                                                while (w.nextNode()) {
-                                                    var l = w.currentNode.textContent.length;
-                                                    if (cur + l >= targetOffset) { node = w.currentNode; off = targetOffset - cur; break; }
-                                                    cur += l;
-                                                }
-                                                if (node) {
-                                                    var rng = document.createRange(); rng.setStart(node, off); rng.setEnd(node, Math.min(off + 1, node.textContent.length));
-                                                    scrollPos = rng.getBoundingClientRect().left;
-                                                }
-                                            }
-                                            window.scrollTo(Math.floor((window.pageXOffset + scrollPos + 5) / pw) * pw, 0);
-                                        }
                                     }
                                     document.documentElement.style.scrollSnapType = 'x mandatory';
                                     isAutoScrolling = false;
@@ -1884,23 +1798,19 @@ class ReaderActivity : AppCompatActivity() {
 
     private fun loadInitialPagedChapters() {
         val useCache = lastKnownPosition != null && lastKnownPosition?.first == currentSpineIndex
-        val finalPos = if (useCache) lastKnownPosition!! else Triple(currentSpineIndex, pendingElementIndex, pendingCharOffset)
+        val finalPos = if (useCache) lastKnownPosition!! else Triple(currentSpineIndex, -1, -1)
         
-        val idxToUse = finalPos.second
-        val offsetToUse = finalPos.third
         val pageToUse = pendingPageIndex
         val anchorToUse = pendingAnchor
         val jumpToLast = shouldJumpToLastPage
 
-        pendingElementIndex = -1
-        pendingCharOffset = -1
         pendingPageIndex = -1
         pendingAnchor = null
         shouldJumpToLastPage = false
 
         isJumpingToChapter = true
 
-        loadAndAppendChapter(finalPos.first, idxToUse, offsetToUse, jumpToLast, anchorToUse, targetPage = pageToUse) {
+        loadAndAppendChapter(finalPos.first, jumpToLast = jumpToLast, anchor = anchorToUse, targetPage = pageToUse) {
             loadAndPrependChapter(finalPos.first - 1) {
                 loadAndAppendChapter(finalPos.first + 1) {
                     isJumpingToChapter = false
@@ -1945,7 +1855,7 @@ class ReaderActivity : AppCompatActivity() {
                         if (active) AndroidReader.onChapterEntered(parseInt(active.getAttribute('data-index')));
                     });
 
-                    function appendChapter(index, html, targetIdx, targetOffset, lang) {
+                    function appendChapter(index, html, lang) {
                         var container = document.getElementById('chapters-container');
                         if (document.getElementById('chapter-' + index)) return;
                         
@@ -1964,31 +1874,6 @@ class ReaderActivity : AppCompatActivity() {
                         var sentinel = document.createElement('div');
                         sentinel.id = 'bottom-sentinel'; sentinel.style.height = '100px'; sentinel.style.width = '100%';
                         container.appendChild(sentinel); observer.observe(sentinel);
-                        
-                        if (targetIdx >= 0) {
-                            var retry = 0;
-                            function sync() {
-                                var t = section.querySelector('[data-idx="' + targetIdx + '"]');
-                                if (t || retry > 40) {
-                                    if (t) {
-                                        if (targetOffset <= 0) window.scrollTo(0, t.offsetTop);
-                                        else {
-                                            var cur = 0, node = null, off = 0, w = document.createTreeWalker(t, NodeFilter.SHOW_TEXT, null, false);
-                                            while (w.nextNode()) {
-                                                var l = w.currentNode.textContent.length;
-                                                if (cur + l >= targetOffset) { node = w.currentNode; off = targetOffset - cur; break; }
-                                                cur += l;
-                                            }
-                                            if (node) {
-                                                var rng = document.createRange(); rng.setStart(node, off); rng.setEnd(node, Math.min(off + 1, node.textContent.length));
-                                                window.scrollTo(0, window.pageYOffset + rng.getBoundingClientRect().top - 60);
-                                            } else window.scrollTo(0, t.offsetTop);
-                                        }
-                                    }
-                                } else { retry++; setTimeout(sync, 50); }
-                            }
-                            sync();
-                        }
                     }
 
                     function prependChapter(index, html, lang) {
@@ -2023,21 +1908,15 @@ class ReaderActivity : AppCompatActivity() {
         isChapterLoading = false
         isJumpingToChapter = true
         
-        pendingElementIndex = -1
-        pendingCharOffset = -1
-        
         webView.loadDataWithBaseURL("epub://reader/", html, "text/html", "UTF-8", null)
     }
 
     private fun loadInitialSeamlessChapters() {
         val useCache = lastKnownPosition != null && lastKnownPosition?.first == currentSpineIndex
-        val finalPos = if (useCache) lastKnownPosition!! else Triple(currentSpineIndex, pendingElementIndex, pendingCharOffset)
-        
-        val idxToUse = finalPos.second
-        val offsetToUse = finalPos.third
+        val finalPos = if (useCache) lastKnownPosition!! else Triple(currentSpineIndex, -1, -1)
         
         isJumpingToChapter = true
-        loadAndAppendChapter(finalPos.first, idxToUse, offsetToUse) {
+        loadAndAppendChapter(finalPos.first) {
             loadAndPrependChapter(finalPos.first - 1, stayOnCurrent = true) {
                 loadAndAppendChapter(finalPos.first + 1, stickToCurrent = true) {
                     isJumpingToChapter = false
@@ -2048,8 +1927,6 @@ class ReaderActivity : AppCompatActivity() {
 
     private fun loadAndAppendChapter(
         index: Int,
-        targetIdx: Int = -1,
-        targetOffset: Int = -1,
         jumpToLast: Boolean = false,
         anchor: String? = null,
         scrollToNew: Boolean = false,
@@ -2075,7 +1952,7 @@ class ReaderActivity : AppCompatActivity() {
         val langArg = if (content.lang != null) "'${content.lang}'" else "null"
         val anchorArg = if (anchor != null) "'$anchor'" else "null"
         val stickToIndexArg = if (stickToCurrent) currentSpineIndex.toString() else "-1"
-        webView.evaluateJavascript("appendChapter($index, `$escapedHtml`, $targetIdx, $targetOffset, $langArg, $jumpToLast, $anchorArg, $scrollToNew, $stickToIndexArg, $targetPage);") {
+        webView.evaluateJavascript("appendChapter($index, `$escapedHtml`, $langArg, $jumpToLast, $anchorArg, $scrollToNew, $stickToIndexArg, $targetPage);") {
             isChapterLoading = false
             webView.evaluateJavascript("applyHighlights('${getHighlightsJson(index)}')", null)
             onFinished?.invoke()
