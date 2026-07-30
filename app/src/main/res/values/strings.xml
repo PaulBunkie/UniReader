@@ -1,6 +1,7 @@
 <resources>
     <string name="app_name">REAiDO</string>
     <string name="action_settings">Settings</string>
+    <string name="library_title">Library</string>
     <!-- Strings used for fragments for navigation -->
     <string name="first_fragment_label">First Fragment</string>
     <string name="second_fragment_label">Second Fragment</string>
@@ -81,7 +82,21 @@
     <!-- Settings -->
     <string name="paged_mode">Paged Mode</string>
     <string name="fullscreen">Fullscreen</string>
+    <string name="keep_screen_on">Keep Screen On</string>
     <string name="screen_margins">Screen Margins</string>
+    <string name="target_translation_language">Target Language</string>
+    <string name="target_language_desc">Choose the language for AI translation. Gemini and GPT support a wide range of languages.</string>
+    <string name="save_and_back">Save &amp; Back</string>
+    <string name="system_language">System Language</string>
+    <string name="language_auto">Auto (System)</string>
+    <string name="language_russian">Russian</string>
+    <string name="language_english">English</string>
+    <string name="language_german">German</string>
+    <string name="language_french">French</string>
+    <string name="language_spanish">Spanish</string>
+    <string name="language_italian">Italian</string>
+    <string name="language_japanese">Japanese</string>
+    <string name="language_chinese">Chinese</string>
     <string name="left">Left</string>
     <string name="right">Right</string>
     <string name="top">Top</string>
