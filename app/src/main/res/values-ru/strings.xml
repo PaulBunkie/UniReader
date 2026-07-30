@@ -81,7 +81,7 @@
     <!-- Settings -->
     <string name="paged_mode">Постраничный режим</string>
     <string name="fullscreen">Полноэкранный режим</string>
-    <string name="screen_margins">Отступы экрана (dp)</string>
+    <string name="screen_margins">Отступы экрана</string>
     <string name="left">Слева</string>
     <string name="right">Справа</string>
     <string name="top">Сверху</string>

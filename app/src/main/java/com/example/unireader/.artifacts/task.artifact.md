@@ -1,7 +1,0 @@
-- [x] Extract strings from layout files to `strings.xml`
-- [x] Extract strings from Kotlin files to `strings.xml`
-- [x] Translate all strings in default `strings.xml` to English (standardization)
-- [x] Create `res/values-ru/strings.xml` with Russian translations
-- [x] Update layout files to use `@string/...`
-- [x] Update Kotlin files to use `getString(R.string....)`
-- [x] Verify build and localization switching

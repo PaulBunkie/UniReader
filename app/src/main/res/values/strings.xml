@@ -81,7 +81,7 @@
     <!-- Settings -->
     <string name="paged_mode">Paged Mode</string>
     <string name="fullscreen">Fullscreen</string>
-    <string name="screen_margins">Screen Margins (dp)</string>
+    <string name="screen_margins">Screen Margins</string>
     <string name="left">Left</string>
     <string name="right">Right</string>
     <string name="top">Top</string>

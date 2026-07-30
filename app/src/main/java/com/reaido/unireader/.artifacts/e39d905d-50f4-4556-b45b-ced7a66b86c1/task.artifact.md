@@ -1,0 +1,5 @@
+- [x] Add extended logging to `TranslationService.kt`
+    - [x] Log request text length and total JSON body size
+    - [x] Extract and log error message from response body on failure
+    - [x] Include server error message in thrown exceptions
+- [x] Verify changes by building the app
